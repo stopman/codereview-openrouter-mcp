@@ -7,9 +7,9 @@ from detect_secrets.settings import default_settings
 
 def scan_secrets(content: str) -> list[dict]:
     """Scan content for secrets using detect-secrets. Returns list of findings."""
-    fd, tmp_path = tempfile.mkstemp(suffix=".txt", text=True)
+    fd, tmp_path = tempfile.mkstemp(suffix=".txt")
     try:
-        with open(fd, "w", encoding="utf-8") as f:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             f.write(content)
         secrets = SecretsCollection()
         with default_settings():
