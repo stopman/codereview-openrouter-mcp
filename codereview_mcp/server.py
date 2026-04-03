@@ -23,7 +23,7 @@ async def _do_review(content: str, model: str, focus: str, context: str = "") ->
     model_id = resolve_model(model or settings.default_model)
     content, findings = redact_secrets(content)
     if findings:
-        warning = "\n".join(f"  - {name} (line {line})" for name, line in findings)
+        warning = "\n".join(f"  - {f['type']} (line {f['line_number']})" for f in findings)
         context += f"\n\n⚠️ NOTICE: {len(findings)} potential secret(s) were redacted before sending:\n{warning}"
     prompt = format_review_request(content, focus=focus, context=context)
     return await get_review(prompt, REVIEW_SYSTEM_PROMPT, model_id)
