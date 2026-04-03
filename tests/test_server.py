@@ -1,6 +1,6 @@
 import pytest
 
-from codereview_mcp.prompts import (
+from codereview_openrouter_mcp.prompts import (
     FOCUS_PROMPTS,
     REVIEW_SYSTEM_PROMPT,
     VALID_FOCUS_OPTIONS,

@@ -2,7 +2,7 @@ import subprocess
 
 import pytest
 
-from codereview_mcp.git_ops import (
+from codereview_openrouter_mcp.git_ops import (
     GitError,
     filter_binary_diffs,
     get_file_content,

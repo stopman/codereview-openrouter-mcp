@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-codereview-openrouter-mcp = "codereview_mcp.server:main"
+codereview-openrouter-mcp = "codereview_openrouter_mcp.server:main"
 
 [project.optional-dependencies]
 dev = [

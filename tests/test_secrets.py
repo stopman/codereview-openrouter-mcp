@@ -1,4 +1,4 @@
-from codereview_mcp.secrets import redact_secrets, scan_secrets
+from codereview_openrouter_mcp.secrets import redact_secrets, scan_secrets
 
 
 def test_scan_detects_aws_key():

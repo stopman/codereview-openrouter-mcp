@@ -2,9 +2,9 @@ import asyncio
 
 from mcp.server.fastmcp import FastMCP
 
-from codereview_mcp.client import get_review
-from codereview_mcp.config import settings
-from codereview_mcp.git_ops import (
+from codereview_openrouter_mcp.client import get_review
+from codereview_openrouter_mcp.config import settings
+from codereview_openrouter_mcp.git_ops import (
     GitError,
     filter_binary_diffs,
     get_branch_diff,
@@ -14,9 +14,9 @@ from codereview_mcp.git_ops import (
     truncate_diff,
     validate_repo,
 )
-from codereview_mcp.models import resolve_model
-from codereview_mcp.prompts import REVIEW_SYSTEM_PROMPT, format_review_request
-from codereview_mcp.secrets import redact_secrets
+from codereview_openrouter_mcp.models import resolve_model
+from codereview_openrouter_mcp.prompts import REVIEW_SYSTEM_PROMPT, format_review_request
+from codereview_openrouter_mcp.secrets import redact_secrets
 
 mcp = FastMCP("CodeReview")
 

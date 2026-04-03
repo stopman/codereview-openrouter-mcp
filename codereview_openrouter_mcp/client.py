@@ -1,7 +1,7 @@
 import openai
 from openai import AsyncOpenAI
 
-from codereview_mcp.config import settings
+from codereview_openrouter_mcp.config import settings
 
 _client: AsyncOpenAI | None = None
 
