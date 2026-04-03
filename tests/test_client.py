@@ -5,7 +5,7 @@ from codereview_mcp.models import MODELS, resolve_model
 
 def test_resolve_known_models():
     assert resolve_model("gemini") == "google/gemini-3.1-pro-preview"
-    assert resolve_model("gpt") == "openai/gpt-5.3-codex"
+    assert resolve_model("openai") == "openai/gpt-5.3-codex"
     assert resolve_model("claude") == "anthropic/claude-opus-4.6"
     assert resolve_model("deepseek") == "deepseek/deepseek-r1"
 

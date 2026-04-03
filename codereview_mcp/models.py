@@ -1,6 +1,6 @@
 MODELS: dict[str, str] = {
     "gemini": "google/gemini-3.1-pro-preview",
-    "gpt": "openai/gpt-5.3-codex",
+    "openai": "openai/gpt-5.3-codex",
     "claude": "anthropic/claude-opus-4.6",
     "deepseek": "deepseek/deepseek-r1",
 }
