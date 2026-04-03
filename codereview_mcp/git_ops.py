@@ -50,13 +50,13 @@ async def get_working_diff(repo_path: str) -> str:
 
 async def get_commit_diff(repo_path: str, sha: str = "HEAD") -> str:
     _validate_git_ref(sha, "commit SHA")
-    return await _run_git(repo_path, "show", "--format=", "--", sha)
+    return await _run_git(repo_path, "show", "--format=", sha, "--")
 
 
 async def get_branch_diff(repo_path: str, branch: str, base: str = "main") -> str:
     _validate_git_ref(branch, "branch")
     _validate_git_ref(base, "base branch")
-    return await _run_git(repo_path, "diff", "--", f"{base}...{branch}")
+    return await _run_git(repo_path, "diff", f"{base}...{branch}", "--")
 
 
 async def get_file_content(repo_path: str, file_path: str) -> str:
