@@ -1,0 +1,11 @@
+{
+  "mcpServers": {
+    "codereview": {
+      "command": "uv",
+      "args": ["run", "--directory", "/Users/stopman/Projects/codereview-mcp", "codereview-mcp"],
+      "env": {
+        "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
+      }
+    }
+  }
+}
