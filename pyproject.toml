@@ -1,7 +1,7 @@
 [project]
 name = "codereview-openrouter-mcp"
 version = "0.1.0"
-description = "MCP server for AI-powered code review — route to Gemini, GPT, Claude, or DeepSeek via OpenRouter"
+description = "MCP server for AI-powered code review — route to Gemini, GPT, or Claude via OpenRouter"
 license = "MIT"
 requires-python = ">=3.11"
 dependencies = [

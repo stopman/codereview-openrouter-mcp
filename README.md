@@ -2,7 +2,7 @@
 
 An MCP server that gives your AI coding assistant access to **staff/principal-engineer-level code review** from the world's best LLMs — all through a single OpenRouter API key.
 
-Pick your reviewer per-request: **Gemini 3.1 Pro**, **GPT-5.3 Codex**, **Claude Opus 4.6**, or **DeepSeek R1**. Compare opinions. Get a second (or third, or fourth) opinion on your code before it ships.
+Pick your reviewer per-request: **Gemini 3.1 Pro**, **GPT-5.3 Codex**, or **Claude Opus 4.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
 
 ## Why this exists
 
@@ -55,7 +55,7 @@ Ask Claude Code to review your work:
 
 > "Review the last commit using Claude"
 
-> "Do a security-focused review of server.py with DeepSeek"
+> "Do a security-focused review of server.py with OpenAI"
 
 ## Tools
 
@@ -94,10 +94,10 @@ review_branch(branch="feature/auth", repo_path=".", base="main", model="claude")
 Full-file review for when you want a complete assessment.
 
 ```
-review_file(file_path="src/auth.py", repo_path=".", model="deepseek", focus="architecture")
+review_file(file_path="src/auth.py", repo_path=".", model="claude", focus="architecture")
 ```
 
-**Example prompt:** *"Review src/auth.py with DeepSeek, focus on architecture"*
+**Example prompt:** *"Review src/auth.py with Claude, focus on architecture"*
 
 ## Models
 
@@ -106,9 +106,8 @@ review_file(file_path="src/auth.py", repo_path=".", model="deepseek", focus="arc
 | `gemini` | Google Gemini 3.1 Pro | Large diffs, fast turnaround |
 | `openai` | OpenAI GPT-5.3 Codex | Deep code understanding |
 | `claude` | Anthropic Claude Opus 4.6 | Nuanced architectural feedback |
-| `deepseek` | DeepSeek R1 | Reasoning-heavy analysis |
 
-Pass `model="gemini"`, `model="openai"`, `model="claude"`, or `model="deepseek"` to any tool. Default is `gemini`.
+Pass `model="gemini"`, `model="openai"`, or `model="claude"` to any tool. Default is `gemini`.
 
 ## Focus areas
 
@@ -183,7 +182,7 @@ uv run pytest tests/ -v
 
 ```
 Claude Code  -->  MCP Server  -->  detect-secrets (redact)  -->  OpenRouter API  -->  LLM
-                  (4 tools)        (scan & redact secrets)       (unified routing)    (Gemini/OpenAI/Claude/DeepSeek)
+                  (4 tools)        (scan & redact secrets)       (unified routing)    (Gemini/OpenAI/Claude)
                       |
                    git ops
               (diff/show/branch)

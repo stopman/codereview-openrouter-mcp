@@ -42,7 +42,7 @@ async def _prepare_diff(diff: str) -> str:
 
     Args:
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek
+        model: Model to use for review. Options: gemini, openai, claude
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
     """
 )
@@ -69,7 +69,7 @@ async def review_diff(
     Args:
         repo_path: Path to the git repository (defaults to current directory)
         sha: Commit SHA to review (defaults to HEAD)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek
+        model: Model to use for review. Options: gemini, openai, claude
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
     """
 )
@@ -98,7 +98,7 @@ async def review_commit(
         repo_path: Path to the git repository (defaults to current directory)
         branch: Branch to review
         base: Base branch to compare against (defaults to main)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek
+        model: Model to use for review. Options: gemini, openai, claude
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
     """
 )
@@ -127,7 +127,7 @@ async def review_branch(
     Args:
         file_path: Path to the file relative to repo_path
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek
+        model: Model to use for review. Options: gemini, openai, claude
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
     """
 )

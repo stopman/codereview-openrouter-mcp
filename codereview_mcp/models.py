@@ -2,7 +2,6 @@ MODELS: dict[str, str] = {
     "gemini": "google/gemini-3.1-pro-preview",
     "openai": "openai/gpt-5.3-codex",
     "claude": "anthropic/claude-opus-4.6",
-    "deepseek": "deepseek/deepseek-r1",
 }
 
 DEFAULT_MODEL = "gemini"
