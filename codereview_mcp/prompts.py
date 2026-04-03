@@ -92,11 +92,22 @@ FOCUS_PROMPTS: dict[str, str] = {
 }
 
 
+VALID_FOCUS_OPTIONS = {"all"} | set(FOCUS_PROMPTS.keys())
+
+
+def validate_focus(focus: str) -> str:
+    if focus not in VALID_FOCUS_OPTIONS:
+        available = ", ".join(sorted(VALID_FOCUS_OPTIONS))
+        raise ValueError(f"Unknown focus '{focus}'. Available: {available}")
+    return focus
+
+
 def format_review_request(content: str, focus: str = "all", context: str = "") -> str:
+    validate_focus(focus)
     parts = []
     if context:
         parts.append(f"**Context**: {context}")
-    if focus != "all" and focus in FOCUS_PROMPTS:
+    if focus != "all":
         parts.append(f"**Focus**: {FOCUS_PROMPTS[focus]}")
     parts.append("**Code to review**:")
     parts.append(f"```\n{content}\n```")

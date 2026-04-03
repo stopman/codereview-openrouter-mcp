@@ -1,4 +1,12 @@
-from codereview_mcp.prompts import REVIEW_SYSTEM_PROMPT, format_review_request, FOCUS_PROMPTS
+import pytest
+
+from codereview_mcp.prompts import (
+    FOCUS_PROMPTS,
+    REVIEW_SYSTEM_PROMPT,
+    VALID_FOCUS_OPTIONS,
+    format_review_request,
+    validate_focus,
+)
 
 
 def test_system_prompt_covers_all_dimensions():
@@ -31,3 +39,13 @@ def test_format_review_request_with_context():
 def test_all_focus_options_exist():
     expected = {"security", "architecture", "edge_cases", "style", "abstractions"}
     assert set(FOCUS_PROMPTS.keys()) == expected
+
+
+def test_validate_focus_valid():
+    for opt in VALID_FOCUS_OPTIONS:
+        assert validate_focus(opt) == opt
+
+
+def test_validate_focus_invalid():
+    with pytest.raises(ValueError, match="Unknown focus"):
+        validate_focus("invalid_focus")

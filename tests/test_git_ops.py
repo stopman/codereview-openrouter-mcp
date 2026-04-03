@@ -1,10 +1,11 @@
-import os
-import tempfile
+import subprocess
 
 import pytest
 
 from codereview_mcp.git_ops import (
+    GitError,
     filter_binary_diffs,
+    get_file_content,
     get_working_diff,
     truncate_diff,
     validate_repo,
@@ -14,11 +15,28 @@ from codereview_mcp.git_ops import (
 @pytest.fixture
 def temp_git_repo(tmp_path):
     """Create a temporary git repository."""
-    os.system(f"cd {tmp_path} && git init && git config user.email 'test@test.com' && git config user.name 'Test'")
-    # Create initial commit
+    subprocess.run(
+        ["git", "init"],
+        cwd=tmp_path, check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.email", "test@test.com"],
+        cwd=tmp_path, check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "config", "user.name", "Test"],
+        cwd=tmp_path, check=True, capture_output=True,
+    )
     test_file = tmp_path / "hello.py"
     test_file.write_text("print('hello')\n")
-    os.system(f"cd {tmp_path} && git add . && git commit -m 'init'")
+    subprocess.run(
+        ["git", "add", "."],
+        cwd=tmp_path, check=True, capture_output=True,
+    )
+    subprocess.run(
+        ["git", "commit", "-m", "init"],
+        cwd=tmp_path, check=True, capture_output=True,
+    )
     return tmp_path
 
 
@@ -47,6 +65,25 @@ async def test_get_working_diff_with_changes(temp_git_repo):
     assert "world" in diff
 
 
+@pytest.mark.asyncio
+async def test_get_file_content_path_traversal(temp_git_repo):
+    """Path traversal must be rejected."""
+    with pytest.raises(GitError, match="Path traversal"):
+        await get_file_content(str(temp_git_repo), "../../etc/passwd")
+
+
+@pytest.mark.asyncio
+async def test_get_file_content_valid(temp_git_repo):
+    content = await get_file_content(str(temp_git_repo), "hello.py")
+    assert "hello" in content
+
+
+@pytest.mark.asyncio
+async def test_get_file_content_not_found(temp_git_repo):
+    with pytest.raises(GitError, match="File not found"):
+        await get_file_content(str(temp_git_repo), "nonexistent.py")
+
+
 def test_truncate_diff_short():
     assert truncate_diff("short", 100) == "short"
 
@@ -54,7 +91,7 @@ def test_truncate_diff_short():
 def test_truncate_diff_long():
     long_text = "x" * 200
     result = truncate_diff(long_text, 100)
-    assert len(result) > 100  # includes truncation message
+    assert len(result) > 100
     assert "TRUNCATED" in result
     assert result.startswith("x" * 100)
 

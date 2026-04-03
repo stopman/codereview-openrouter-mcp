@@ -1,6 +1,6 @@
-from codereview_mcp.models import MODELS, resolve_model
-
 import pytest
+
+from codereview_mcp.models import MODELS, resolve_model
 
 
 def test_resolve_known_models():
