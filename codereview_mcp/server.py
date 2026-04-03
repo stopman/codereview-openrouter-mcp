@@ -1,3 +1,5 @@
+import asyncio
+
 from mcp.server.fastmcp import FastMCP
 
 from codereview_mcp.client import get_review
@@ -21,7 +23,7 @@ mcp = FastMCP("CodeReview")
 
 async def _do_review(content: str, model: str, focus: str, context: str = "") -> str:
     model_id = resolve_model(model or settings.default_model)
-    content, findings = redact_secrets(content)
+    content, findings = await asyncio.to_thread(redact_secrets, content)
     if findings:
         warning = "\n".join(f"  - {f['type']} (line {f['line_number']})" for f in findings)
         context += f"\n\n⚠️ NOTICE: {len(findings)} potential secret(s) were redacted before sending:\n{warning}"

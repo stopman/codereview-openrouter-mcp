@@ -4,7 +4,7 @@ import re
 from pathlib import Path
 
 GIT_TIMEOUT_SECONDS = 30
-_SAFE_REF_RE = re.compile(r"^[a-zA-Z0-9_./@^~:\-]+$")
+_SAFE_REF_RE = re.compile(r"^[a-zA-Z0-9_./@^~:][a-zA-Z0-9_./@^~:\-]*$")
 
 
 class GitError(Exception):

@@ -1,7 +1,5 @@
-import json
-import re
-import tempfile
 import os
+import tempfile
 
 from detect_secrets import SecretsCollection
 from detect_secrets.settings import default_settings
@@ -9,17 +7,20 @@ from detect_secrets.settings import default_settings
 
 def scan_secrets(content: str) -> list[dict]:
     """Scan content for secrets using detect-secrets. Returns list of findings."""
-    with tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False) as f:
-        f.write(content)
-        tmp_path = f.name
+    fd, tmp_path = tempfile.mkstemp(suffix=".txt", text=True)
     try:
+        with open(fd, "w", encoding="utf-8") as f:
+            f.write(content)
         secrets = SecretsCollection()
         with default_settings():
             secrets.scan_file(tmp_path)
         results = secrets.json()
         return results.get(tmp_path, [])
     finally:
-        os.unlink(tmp_path)
+        try:
+            os.unlink(tmp_path)
+        except OSError:
+            pass
 
 
 def redact_secrets(content: str) -> tuple[str, list[dict]]:
