@@ -48,8 +48,15 @@ async def get_working_diff(repo_path: str) -> str:
     return await _run_git(repo_path, "diff", "HEAD")
 
 
+async def resolve_ref(repo_path: str, ref: str) -> str:
+    """Resolve an abbreviated or symbolic ref to a full SHA."""
+    _validate_git_ref(ref, "git ref")
+    result = await _run_git(repo_path, "rev-parse", ref)
+    return result.strip()
+
+
 async def get_commit_diff(repo_path: str, sha: str = "HEAD") -> str:
-    _validate_git_ref(sha, "commit SHA")
+    sha = await resolve_ref(repo_path, sha)
     return await _run_git(repo_path, "show", "--format=", sha, "--")
 
 

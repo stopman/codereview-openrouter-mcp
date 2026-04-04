@@ -5,8 +5,10 @@ import pytest
 from codereview_openrouter_mcp.git_ops import (
     GitError,
     filter_binary_diffs,
+    get_commit_diff,
     get_file_content,
     get_working_diff,
+    resolve_ref,
     truncate_diff,
     validate_repo,
 )
@@ -94,6 +96,53 @@ def test_truncate_diff_long():
     assert len(result) > 100
     assert "TRUNCATED" in result
     assert result.startswith("x" * 100)
+
+
+@pytest.mark.asyncio
+async def test_resolve_ref_full_sha(temp_git_repo):
+    """Full SHA should resolve to itself."""
+    full = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=temp_git_repo, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    assert await resolve_ref(str(temp_git_repo), full) == full
+
+
+@pytest.mark.asyncio
+async def test_resolve_ref_abbreviated_sha(temp_git_repo):
+    """Abbreviated SHA should resolve to the full SHA."""
+    full = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=temp_git_repo, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    short = full[:7]
+    assert await resolve_ref(str(temp_git_repo), short) == full
+
+
+@pytest.mark.asyncio
+async def test_resolve_ref_head(temp_git_repo):
+    """HEAD should resolve to a full SHA."""
+    result = await resolve_ref(str(temp_git_repo), "HEAD")
+    assert len(result) == 40
+
+
+@pytest.mark.asyncio
+async def test_resolve_ref_invalid(temp_git_repo):
+    """Invalid ref should raise GitError."""
+    with pytest.raises(GitError):
+        await resolve_ref(str(temp_git_repo), "nonexistent_ref_abc123")
+
+
+@pytest.mark.asyncio
+async def test_get_commit_diff_abbreviated_sha(temp_git_repo):
+    """get_commit_diff should work with abbreviated SHAs."""
+    full = subprocess.run(
+        ["git", "rev-parse", "HEAD"],
+        cwd=temp_git_repo, capture_output=True, text=True, check=True,
+    ).stdout.strip()
+    short = full[:7]
+    diff = await get_commit_diff(str(temp_git_repo), short)
+    assert "hello" in diff
 
 
 def test_filter_binary_diffs():
