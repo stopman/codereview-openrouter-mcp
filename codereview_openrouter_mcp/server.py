@@ -15,7 +15,12 @@ from codereview_openrouter_mcp.git_ops import (
     validate_repo,
 )
 from codereview_openrouter_mcp.models import resolve_model
-from codereview_openrouter_mcp.prompts import REVIEW_SYSTEM_PROMPT, format_review_request
+from codereview_openrouter_mcp.prompts import (
+    PLAN_REVIEW_SYSTEM_PROMPT,
+    REVIEW_SYSTEM_PROMPT,
+    format_plan_review_request,
+    format_review_request,
+)
 from codereview_openrouter_mcp.secrets import redact_secrets
 
 mcp = FastMCP("CodeReview")
@@ -146,6 +151,31 @@ async def review_file(
         content = truncate_diff(content, settings.max_diff_chars)
         return await _do_review(content, model, focus, context=f"Full file review: {file_path}")
     except (GitError, ValueError) as e:
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    description="""Review a technical plan or design document.
+
+    Evaluates the plan for first-principles thinking, simplicity (KISS),
+    security risks, edge cases, and architecture quality.
+
+    Args:
+        plan: The plan or design document text to review
+        codebase_context: Optional relevant code snippets for grounding the review
+        model: Model to use for review. Options: gemini, openai, claude
+    """
+)
+async def review_plan(
+    plan: str,
+    codebase_context: str = "",
+    model: str = "gemini",
+) -> str:
+    try:
+        model_id = resolve_model(model or settings.default_model)
+        prompt = format_plan_review_request(plan, codebase_context)
+        return await get_review(prompt, PLAN_REVIEW_SYSTEM_PROMPT, model_id)
+    except ValueError as e:
         return f"Error: {e}"
 
 
