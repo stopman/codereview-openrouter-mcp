@@ -155,3 +155,75 @@ diff --git a/code.py b/code.py
     result = filter_binary_diffs(diff)
     assert "[binary file skipped]" in result
     assert "print('hello')" in result
+
+
+@pytest.mark.asyncio
+async def test_repo_path_allowed_when_configured(temp_git_repo):
+    """Paths under allowed roots should pass validation."""
+    from unittest.mock import patch
+
+    with patch("codereview_openrouter_mcp.config.settings") as mock_settings:
+        mock_settings.allowed_repo_roots = [str(temp_git_repo.parent)]
+        assert await validate_repo(str(temp_git_repo)) is True
+
+
+@pytest.mark.asyncio
+async def test_repo_path_rejected_when_outside_roots(temp_git_repo):
+    """Paths outside allowed roots should fail validation."""
+    from unittest.mock import patch
+
+    with patch("codereview_openrouter_mcp.config.settings") as mock_settings:
+        mock_settings.allowed_repo_roots = ["/some/other/root"]
+        assert await validate_repo(str(temp_git_repo)) is False
+
+
+@pytest.mark.asyncio
+async def test_repo_path_no_restriction_when_unconfigured(temp_git_repo):
+    """When ALLOWED_REPO_ROOTS is empty, all paths allowed."""
+    from unittest.mock import patch
+
+    with patch("codereview_openrouter_mcp.config.settings") as mock_settings:
+        mock_settings.allowed_repo_roots = []
+        assert await validate_repo(str(temp_git_repo)) is True
+
+
+@pytest.mark.asyncio
+async def test_repo_path_rejects_symlink_escape(temp_git_repo, tmp_path):
+    """Symlinks that escape allowed roots should be rejected."""
+    from unittest.mock import patch
+
+    # Create a symlink from outside allowed root pointing to the repo
+    link_path = tmp_path / "sneaky_link"
+    link_path.symlink_to(temp_git_repo)
+
+    with patch("codereview_openrouter_mcp.config.settings") as mock_settings:
+        # Only allow tmp_path (the link's parent), not temp_git_repo's parent
+        # The link resolves to temp_git_repo, which is NOT under /some/allowed/root
+        mock_settings.allowed_repo_roots = ["/some/allowed/root"]
+        assert await validate_repo(str(link_path)) is False
+
+
+@pytest.mark.asyncio
+async def test_validate_git_ref_rejects_dash_prefix():
+    """Refs starting with - must be rejected to prevent argument injection."""
+    from codereview_openrouter_mcp.git_ops import _validate_git_ref
+
+    with pytest.raises(GitError, match="Invalid"):
+        _validate_git_ref("--no-index")
+    with pytest.raises(GitError, match="Invalid"):
+        _validate_git_ref("-v")
+
+
+@pytest.mark.asyncio
+async def test_git_error_does_not_leak_raw_stderr(temp_git_repo):
+    """Git errors should sanitize stderr, not return it raw."""
+    from codereview_openrouter_mcp.git_ops import _run_git
+
+    with pytest.raises(GitError) as exc_info:
+        await _run_git(str(temp_git_repo), "show", "nonexistent_ref_that_does_not_exist")
+
+    error_msg = str(exc_info.value)
+    # Should NOT contain raw git stderr like "fatal: bad object"
+    assert "fatal:" not in error_msg, f"Raw git stderr leaked: {error_msg}"
+    # Should contain a sanitized message
+    assert "Git operation failed" in error_msg

@@ -22,6 +22,7 @@ from codereview_openrouter_mcp.prompts import (
     REVIEW_SYSTEM_PROMPT,
     format_plan_review_request,
     format_review_request,
+    sanitize_context,
 )
 from codereview_openrouter_mcp.secrets import redact_secrets
 
@@ -106,7 +107,7 @@ async def review_commit(
             log.info("review_commit: no changes in commit %s", sha)
             return f"No changes found in commit {sha}."
         diff = await _prepare_diff(diff)
-        return await _do_review(diff, model, focus, context=f"Commit {sha}")
+        return await _do_review(diff, model, focus, context=f"Commit {sanitize_context(sha)}")
     except (GitError, ValueError) as e:
         log.error("review_commit failed: %s", e)
         return f"Error: {e}"
@@ -139,7 +140,7 @@ async def review_branch(
             log.info("review_branch: no changes between %s and %s", base, branch)
             return f"No changes found between {base} and {branch}."
         diff = await _prepare_diff(diff)
-        return await _do_review(diff, model, focus, context=f"Branch {branch} vs {base}")
+        return await _do_review(diff, model, focus, context=f"Branch {sanitize_context(branch)} vs {sanitize_context(base)}")
     except (GitError, ValueError) as e:
         log.error("review_branch failed: %s", e)
         return f"Error: {e}"
@@ -170,7 +171,7 @@ async def review_file(
             log.info("review_file: file '%s' is empty", file_path)
             return f"File '{file_path}' is empty. Nothing to review."
         content = truncate_diff(content, settings.max_diff_chars)
-        return await _do_review(content, model, focus, context=f"Full file review: {file_path}")
+        return await _do_review(content, model, focus, context=f"Full file review: {sanitize_context(file_path)}")
     except (GitError, ValueError) as e:
         log.error("review_file failed: %s", e)
         return f"Error: {e}"
@@ -196,6 +197,17 @@ async def review_plan(
     log.info("review_plan called: model=%s, plan_len=%d", model, len(plan))
     try:
         model_id = resolve_model(model or settings.default_model)
+
+        # Redact secrets from both user-supplied inputs
+        plan, plan_findings = await asyncio.to_thread(redact_secrets, plan)
+        if codebase_context:
+            codebase_context, ctx_findings = await asyncio.to_thread(redact_secrets, codebase_context)
+        else:
+            ctx_findings = []
+        all_findings = plan_findings + ctx_findings
+        if all_findings:
+            log.warning("Redacted %d potential secret(s) from plan review input", len(all_findings))
+
         prompt = format_plan_review_request(plan, codebase_context)
         t0 = time.monotonic()
         result = await get_review(prompt, PLAN_REVIEW_SYSTEM_PROMPT, model_id)

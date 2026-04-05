@@ -1,5 +1,4 @@
 import asyncio
-import os
 import re
 from pathlib import Path
 
@@ -41,13 +40,29 @@ async def _run_git(repo_path: str, *args: str) -> str:
     if proc.returncode != 0:
         err_msg = stderr.decode(errors='replace').strip()
         log.error("Git command failed (rc=%d): %s — %s", proc.returncode, cmd_str, err_msg)
-        raise GitError(f"git {' '.join(args)} failed: {err_msg}")
+        # Sanitize: log full error for operators, but raise a generic message
+        # to avoid leaking internal paths, repo structure, or secrets
+        raise GitError(f"Git operation failed: {args[0]}")
     log.debug("Git command succeeded: %s (stdout=%d bytes)", cmd_str, len(stdout))
     return stdout.decode(errors="replace")
 
 
+def _check_repo_path_allowed(repo_path: str) -> None:
+    """Check repo_path is under an allowed root (if configured)."""
+    from codereview_openrouter_mcp.config import settings
+
+    if not settings.allowed_repo_roots:
+        return
+    resolved = Path(repo_path).resolve()
+    for root in settings.allowed_repo_roots:
+        if resolved.is_relative_to(Path(root).resolve()):
+            return
+    raise GitError("Repository path not in allowed roots. Configure ALLOWED_REPO_ROOTS.")
+
+
 async def validate_repo(repo_path: str) -> bool:
     try:
+        _check_repo_path_allowed(repo_path)
         await _run_git(repo_path, "rev-parse", "--git-dir")
         return True
     except (GitError, FileNotFoundError):
