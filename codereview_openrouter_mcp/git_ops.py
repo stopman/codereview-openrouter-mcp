@@ -20,6 +20,7 @@ def _validate_git_ref(ref: str, label: str = "ref") -> None:
 
 
 async def _run_git(repo_path: str, *args: str) -> str:
+    _check_repo_path_allowed(repo_path)
     cmd_str = f"git {' '.join(args)}"
     log.debug("Running: %s (cwd=%s)", cmd_str, repo_path)
     proc = await asyncio.create_subprocess_exec(
@@ -53,16 +54,18 @@ def _check_repo_path_allowed(repo_path: str) -> None:
 
     if not settings.allowed_repo_roots:
         return
-    resolved = Path(repo_path).resolve()
-    for root in settings.allowed_repo_roots:
-        if resolved.is_relative_to(Path(root).resolve()):
-            return
+    try:
+        resolved = Path(repo_path).resolve()
+        for root in settings.allowed_repo_roots:
+            if resolved.is_relative_to(Path(root).resolve()):
+                return
+    except OSError as e:
+        raise GitError(f"Cannot resolve repository path: {e}") from e
     raise GitError("Repository path not in allowed roots. Configure ALLOWED_REPO_ROOTS.")
 
 
 async def validate_repo(repo_path: str) -> bool:
     try:
-        _check_repo_path_allowed(repo_path)
         await _run_git(repo_path, "rev-parse", "--git-dir")
         return True
     except (GitError, FileNotFoundError):

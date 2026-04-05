@@ -203,8 +203,7 @@ async def test_repo_path_rejects_symlink_escape(temp_git_repo, tmp_path):
         assert await validate_repo(str(link_path)) is False
 
 
-@pytest.mark.asyncio
-async def test_validate_git_ref_rejects_dash_prefix():
+def test_validate_git_ref_rejects_dash_prefix():
     """Refs starting with - must be rejected to prevent argument injection."""
     from codereview_openrouter_mcp.git_ops import _validate_git_ref
 

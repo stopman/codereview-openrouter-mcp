@@ -136,6 +136,52 @@ async def test_get_review_no_retry_on_401():
 
 
 @pytest.mark.asyncio
+async def test_get_review_retries_on_connection_error():
+    """Should retry on APIConnectionError (network failure)."""
+    from codereview_openrouter_mcp.client import get_review
+
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=[
+            openai.APIConnectionError(request=MagicMock()),
+            _make_success_response("recovered"),
+        ]
+    )
+
+    with (
+        patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await get_review("code", "system", "google/gemini-3.1-pro-preview")
+
+    assert result == "recovered"
+    assert mock_client.chat.completions.create.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_review_retries_on_timeout_error():
+    """Should retry on APITimeoutError."""
+    from codereview_openrouter_mcp.client import get_review
+
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(
+        side_effect=[
+            openai.APITimeoutError(request=MagicMock()),
+            _make_success_response("recovered"),
+        ]
+    )
+
+    with (
+        patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client),
+        patch("asyncio.sleep", new_callable=AsyncMock),
+    ):
+        result = await get_review("code", "system", "google/gemini-3.1-pro-preview")
+
+    assert result == "recovered"
+    assert mock_client.chat.completions.create.call_count == 2
+
+
+@pytest.mark.asyncio
 async def test_get_review_exhausts_retries():
     """Should return error after max retries exhausted."""
     from codereview_openrouter_mcp.client import get_review

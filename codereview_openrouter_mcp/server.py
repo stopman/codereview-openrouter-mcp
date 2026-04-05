@@ -223,6 +223,8 @@ def main():
     settings.validate()
     setup_logging(settings.log_level)
     log.info("CodeReview MCP server starting (log_level=%s)", settings.log_level)
+    if not settings.allowed_repo_roots:
+        log.warning("ALLOWED_REPO_ROOTS is not set — server can access any git repo on this system")
     mcp.run()
 
 

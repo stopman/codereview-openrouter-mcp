@@ -13,7 +13,8 @@ _client: AsyncOpenAI | None = None
 
 MAX_RETRIES = 3
 RETRY_BACKOFF_BASE = 1.0  # seconds
-RETRY_BUDGET = 10.0  # max total seconds spent retrying
+MAX_BACKOFF_TIME = 10.0  # max total seconds spent in backoff sleeps
+REQUEST_TIMEOUT = 60.0  # per-request timeout in seconds
 RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
 
 
@@ -24,8 +25,18 @@ def _get_client() -> AsyncOpenAI:
         _client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=settings.openrouter_api_key,
+            timeout=REQUEST_TIMEOUT,
         )
     return _client
+
+
+def _is_retryable(error: Exception) -> bool:
+    """Check if an error is transient and worth retrying."""
+    if isinstance(error, openai.APIStatusError):
+        return error.status_code in RETRYABLE_STATUS_CODES
+    if isinstance(error, (openai.APIConnectionError, openai.APITimeoutError)):
+        return True
+    return False
 
 
 async def get_review(content: str, system_prompt: str, model_id: str) -> str:
@@ -52,22 +63,25 @@ async def get_review(content: str, system_prompt: str, model_id: str) -> str:
                 log.warning("OpenRouter returned empty response (no choices)")
                 return "Error: OpenRouter returned an empty response (no choices)."
             return response.choices[0].message.content or ""
-        except openai.APIStatusError as e:
-            if e.status_code in RETRYABLE_STATUS_CODES and attempt < MAX_RETRIES:
+        except (openai.APIStatusError, openai.APIConnectionError, openai.APITimeoutError) as e:
+            if _is_retryable(e) and attempt < MAX_RETRIES:
                 wait = min(
                     RETRY_BACKOFF_BASE * (2 ** attempt) * (0.5 + random.random() * 0.5),
-                    RETRY_BUDGET - total_wait,
+                    MAX_BACKOFF_TIME - total_wait,
                 )
                 if wait > 0:
                     log.warning(
-                        "Retryable API error (status=%d), retrying in %.1fs (attempt %d/%d)",
-                        e.status_code, wait, attempt + 1, MAX_RETRIES,
+                        "Retryable API error (%s), retrying in %.1fs (attempt %d/%d)",
+                        type(e).__name__, wait, attempt + 1, MAX_RETRIES,
                     )
                     await asyncio.sleep(wait)
                     total_wait += wait
                     continue
-            log.error("OpenRouter API error (status=%d): %s", e.status_code, e)
-            return f"Error: OpenRouter API request failed (status {e.status_code}). Please try again."
+            status = getattr(e, "status_code", None)
+            log.error("OpenRouter API error (%s, status=%s): %s", type(e).__name__, status, e)
+            if status:
+                return f"Error: OpenRouter API request failed (status {status}). Please try again."
+            return "Error: OpenRouter API request failed. Please try again."
         except openai.APIError as e:
             log.error("OpenRouter API error: %s", e)
             return "Error: OpenRouter API request failed. Please try again."
