@@ -1,9 +1,12 @@
 import os
-import sys
 
 from dotenv import load_dotenv
 
+from codereview_openrouter_mcp.logging import get_logger
+
 load_dotenv()
+
+log = get_logger("config")
 
 
 def _safe_positive_int(value: str | None, default: int) -> int:
@@ -12,10 +15,10 @@ def _safe_positive_int(value: str | None, default: int) -> int:
     try:
         parsed = int(value)
     except ValueError:
-        print(f"WARNING: Invalid integer '{value}', using default {default}", file=sys.stderr)
+        log.warning("Invalid integer '%s', using default %d", value, default)
         return default
     if parsed <= 0:
-        print(f"WARNING: Value must be positive (got {parsed}), using default {default}", file=sys.stderr)
+        log.warning("Value must be positive (got %d), using default %d", parsed, default)
         return default
     return parsed
 
@@ -25,6 +28,7 @@ class Settings:
         self.openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
         self.default_model: str = os.getenv("DEFAULT_MODEL", "gemini")
         self.max_diff_chars: int = _safe_positive_int(os.getenv("MAX_DIFF_CHARS"), 100000)
+        self.log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
 
     def validate(self):
         if not self.openrouter_api_key:

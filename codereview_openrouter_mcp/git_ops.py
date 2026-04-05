@@ -3,6 +3,10 @@ import os
 import re
 from pathlib import Path
 
+from codereview_openrouter_mcp.logging import get_logger
+
+log = get_logger("git")
+
 GIT_TIMEOUT_SECONDS = 30
 _SAFE_REF_RE = re.compile(r"^[a-zA-Z0-9_./@^~:][a-zA-Z0-9_./@^~:\-]*$")
 
@@ -17,6 +21,8 @@ def _validate_git_ref(ref: str, label: str = "ref") -> None:
 
 
 async def _run_git(repo_path: str, *args: str) -> str:
+    cmd_str = f"git {' '.join(args)}"
+    log.debug("Running: %s (cwd=%s)", cmd_str, repo_path)
     proc = await asyncio.create_subprocess_exec(
         "git", *args,
         cwd=repo_path,
@@ -30,9 +36,13 @@ async def _run_git(repo_path: str, *args: str) -> str:
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
+        log.error("Git command timed out after %ds: %s", GIT_TIMEOUT_SECONDS, cmd_str)
         raise GitError(f"git {' '.join(args)} timed out after {GIT_TIMEOUT_SECONDS}s")
     if proc.returncode != 0:
-        raise GitError(f"git {' '.join(args)} failed: {stderr.decode(errors='replace').strip()}")
+        err_msg = stderr.decode(errors='replace').strip()
+        log.error("Git command failed (rc=%d): %s — %s", proc.returncode, cmd_str, err_msg)
+        raise GitError(f"git {' '.join(args)} failed: {err_msg}")
+    log.debug("Git command succeeded: %s (stdout=%d bytes)", cmd_str, len(stdout))
     return stdout.decode(errors="replace")
 
 

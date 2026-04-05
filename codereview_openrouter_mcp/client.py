@@ -2,6 +2,9 @@ import openai
 from openai import AsyncOpenAI
 
 from codereview_openrouter_mcp.config import settings
+from codereview_openrouter_mcp.logging import get_logger
+
+log = get_logger("client")
 
 _client: AsyncOpenAI | None = None
 
@@ -9,6 +12,7 @@ _client: AsyncOpenAI | None = None
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
+        log.debug("Initializing OpenRouter client")
         _client = AsyncOpenAI(
             base_url="https://openrouter.ai/api/v1",
             api_key=settings.openrouter_api_key,
@@ -18,6 +22,7 @@ def _get_client() -> AsyncOpenAI:
 
 async def get_review(content: str, system_prompt: str, model_id: str) -> str:
     client = _get_client()
+    log.debug("Calling OpenRouter API: model=%s, content_len=%d", model_id, len(content))
     try:
         response = await client.chat.completions.create(
             model=model_id,
@@ -32,9 +37,12 @@ async def get_review(content: str, system_prompt: str, model_id: str) -> str:
             },
         )
     except openai.APIError as e:
+        log.error("OpenRouter API error: %s", e)
         return f"Error: OpenRouter API request failed: {e}"
     except Exception as e:
+        log.error("Unexpected OpenRouter failure: %s", e)
         return f"Error: Unexpected failure calling OpenRouter: {e}"
     if not response.choices:
+        log.warning("OpenRouter returned empty response (no choices)")
         return "Error: OpenRouter returned an empty response (no choices)."
     return response.choices[0].message.content or ""
