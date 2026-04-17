@@ -85,35 +85,55 @@ async def _do_multi_model_review(
     max_tokens: int | None = None,
 ) -> str:
     """Fan out review to all models in ALL_REVIEW_MODELS concurrently."""
-    log.info("Starting multi-model review across %d models: %s", len(ALL_REVIEW_MODELS), ALL_REVIEW_MODELS)
+    min_results = min(3, len(ALL_REVIEW_MODELS))
+    log.info("Starting multi-model review across %d models (returning after %d): %s",
+             len(ALL_REVIEW_MODELS), min_results, ALL_REVIEW_MODELS)
     t0 = time.monotonic()
 
-    tasks = [
-        _do_single_review(
-            "", model_name, system_prompt, prompt,
-            use_reasoning=use_reasoning,
-            max_tokens=max_tokens,
-        )
+    tasks = {
+        asyncio.create_task(
+            _do_single_review(
+                "", model_name, system_prompt, prompt,
+                use_reasoning=use_reasoning,
+                max_tokens=max_tokens,
+            )
+        ): model_name
         for model_name in ALL_REVIEW_MODELS
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    }
 
     sections = []
     errors = []
-    for result in results:
-        if isinstance(result, Exception):
-            errors.append(f"Unexpected error: {result}")
+    done_count = 0
+
+    for coro in asyncio.as_completed(tasks.keys()):
+        try:
+            result = await coro
+        except Exception as e:
+            errors.append(f"Unexpected error: {e}")
+            done_count += 1
             continue
+
         model_name, review_text = result
         display_name = MODEL_DISPLAY_NAMES.get(model_name, model_name)
+        done_count += 1
+
         if review_text.startswith("Error:"):
             errors.append(f"{display_name}: {review_text}")
         else:
             sections.append(f"---\n\n# Review by {display_name}\n\n{review_text}")
 
+        if len(sections) >= min_results:
+            break
+
+    # Cancel any still-running tasks
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+
     elapsed = time.monotonic() - t0
-    log.info("Multi-model review completed in %.1fs (%d succeeded, %d failed)",
-             elapsed, len(sections), len(errors))
+    remaining = len(ALL_REVIEW_MODELS) - done_count
+    log.info("Multi-model review completed in %.1fs (%d succeeded, %d failed, %d skipped)",
+             elapsed, len(sections), len(errors), remaining)
 
     parts = []
     if errors:
