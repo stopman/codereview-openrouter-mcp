@@ -2,21 +2,19 @@ import logging
 import logging.handlers
 import os
 import sys
+import tempfile
 from pathlib import Path
 
 
 def _resolve_log_dir() -> Path:
+    """Resolve the log directory from env var, home dir, or per-user temp dir."""
     env_dir = os.getenv("MCP_LOG_DIR")
     if env_dir:
-        return Path(env_dir)
+        return Path(env_dir).resolve()
     try:
         return Path.home() / ".cache" / "codereview-mcp" / "logs"
     except RuntimeError:
-        return Path("/tmp") / "codereview-mcp" / "logs"
-
-
-LOG_DIR = _resolve_log_dir()
-LOG_FILE = LOG_DIR / "server.log"
+        return Path(tempfile.gettempdir()) / f"codereview-mcp-{os.getuid()}" / "logs"
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -29,8 +27,15 @@ def get_logger(name: str) -> logging.Logger:
     return logger
 
 
-def setup_logging(level: str = "INFO") -> None:
-    """Configure the root 'codereview' logger once at startup."""
+def setup_logging(level: str = "INFO", log_dir: Path | None = None) -> None:
+    """Configure the root 'codereview' logger once at startup.
+
+    Log directory is resolved at call time (not import time) from:
+    1. The explicit ``log_dir`` parameter
+    2. The ``MCP_LOG_DIR`` environment variable
+    3. ``~/.cache/codereview-mcp/logs``
+    4. A per-user temp directory as a last resort
+    """
     root = logging.getLogger("codereview")
     if root.handlers:
         return  # already configured
@@ -44,14 +49,18 @@ def setup_logging(level: str = "INFO") -> None:
     stderr_handler.setFormatter(fmt)
     root.addHandler(stderr_handler)
 
+    resolved_dir = log_dir or _resolve_log_dir()
+    log_file = resolved_dir / "server.log"
+
     try:
-        LOG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        resolved_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        resolved_dir.chmod(0o700)
         file_handler = logging.handlers.RotatingFileHandler(
-            LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3,
+            log_file, maxBytes=5 * 1024 * 1024, backupCount=3,
         )
         file_handler.setFormatter(fmt)
         root.addHandler(file_handler)
-    except OSError:
-        print("Warning: could not create log directory, file logging disabled", file=sys.stderr)
+    except OSError as e:
+        print(f"Warning: could not set up file logging ({e}), file logging disabled", file=sys.stderr)
 
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
