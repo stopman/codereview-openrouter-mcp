@@ -1,3 +1,5 @@
+import re
+
 REVIEW_SYSTEM_PROMPT = """You are a Staff/Principal Software Engineer conducting a thorough code review.
 You have 15+ years of experience across systems programming, distributed systems, security, and large-scale production systems.
 
@@ -156,6 +158,21 @@ Format your response as structured Markdown with these exact sections:
 
 ### Overall Verdict
 [1-2 sentence recommendation: proceed, revise, or rethink]"""
+
+
+_CONTROL_CHARS_RE = re.compile(r'[\x00-\x08\x0b\x0c\x0e-\x1f]')
+
+
+def sanitize_context(value: str, max_length: int = 200) -> str:
+    """Sanitize a user-provided value for safe inclusion in prompt context.
+
+    Strips control characters, collapses newlines to spaces, and truncates.
+    """
+    value = _CONTROL_CHARS_RE.sub('', value)
+    value = value.replace('\n', ' ').replace('\r', ' ')
+    if len(value) > max_length:
+        value = value[:max_length] + "..."
+    return value
 
 
 FOCUS_PROMPTS: dict[str, str] = {

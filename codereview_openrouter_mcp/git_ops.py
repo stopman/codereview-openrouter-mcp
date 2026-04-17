@@ -1,7 +1,10 @@
 import asyncio
-import os
 import re
 from pathlib import Path
+
+from codereview_openrouter_mcp.logging import get_logger
+
+log = get_logger("git")
 
 GIT_TIMEOUT_SECONDS = 30
 _SAFE_REF_RE = re.compile(r"^[a-zA-Z0-9_./@^~:][a-zA-Z0-9_./@^~:\-]*$")
@@ -17,6 +20,9 @@ def _validate_git_ref(ref: str, label: str = "ref") -> None:
 
 
 async def _run_git(repo_path: str, *args: str) -> str:
+    _check_repo_path_allowed(repo_path)
+    cmd_str = f"git {' '.join(args)}"
+    log.debug("Running: %s (cwd=%s)", cmd_str, repo_path)
     proc = await asyncio.create_subprocess_exec(
         "git", *args,
         cwd=repo_path,
@@ -30,10 +36,32 @@ async def _run_git(repo_path: str, *args: str) -> str:
     except asyncio.TimeoutError:
         proc.kill()
         await proc.wait()
+        log.error("Git command timed out after %ds: %s", GIT_TIMEOUT_SECONDS, cmd_str)
         raise GitError(f"git {' '.join(args)} timed out after {GIT_TIMEOUT_SECONDS}s")
     if proc.returncode != 0:
-        raise GitError(f"git {' '.join(args)} failed: {stderr.decode(errors='replace').strip()}")
+        err_msg = stderr.decode(errors='replace').strip()
+        log.error("Git command failed (rc=%d): %s — %s", proc.returncode, cmd_str, err_msg)
+        # Sanitize: log full error for operators, but raise a generic message
+        # to avoid leaking internal paths, repo structure, or secrets
+        raise GitError(f"Git operation failed: {args[0]}")
+    log.debug("Git command succeeded: %s (stdout=%d bytes)", cmd_str, len(stdout))
     return stdout.decode(errors="replace")
+
+
+def _check_repo_path_allowed(repo_path: str) -> None:
+    """Check repo_path is under an allowed root (if configured)."""
+    from codereview_openrouter_mcp.config import settings
+
+    if not settings.allowed_repo_roots:
+        return
+    try:
+        resolved = Path(repo_path).resolve()
+        for root in settings.allowed_repo_roots:
+            if resolved.is_relative_to(Path(root).resolve()):
+                return
+    except OSError as e:
+        raise GitError(f"Cannot resolve repository path: {e}") from e
+    raise GitError("Repository path not in allowed roots. Configure ALLOWED_REPO_ROOTS.")
 
 
 async def validate_repo(repo_path: str) -> bool:
