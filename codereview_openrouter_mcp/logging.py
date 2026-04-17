@@ -1,3 +1,4 @@
+import getpass
 import logging
 import logging.handlers
 import os
@@ -14,7 +15,8 @@ def _resolve_log_dir() -> Path:
     try:
         return Path.home() / ".cache" / "codereview-mcp" / "logs"
     except RuntimeError:
-        return Path(tempfile.gettempdir()) / f"codereview-mcp-{os.getuid()}" / "logs"
+        user = getpass.getuser()
+        return Path(tempfile.gettempdir()) / f"codereview-mcp-{user}" / "logs"
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -54,7 +56,6 @@ def setup_logging(level: str = "INFO", log_dir: Path | None = None) -> None:
 
     try:
         resolved_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        resolved_dir.chmod(0o700)
         file_handler = logging.handlers.RotatingFileHandler(
             log_file, maxBytes=5 * 1024 * 1024, backupCount=3,
         )
