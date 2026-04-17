@@ -1,6 +1,14 @@
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+
+
+@pytest.fixture
+def mock_ctx():
+    """A mock MCP Context with async report_progress."""
+    ctx = MagicMock()
+    ctx.report_progress = AsyncMock()
+    return ctx
 
 from codereview_openrouter_mcp.prompts import (
     FOCUS_PROMPTS,
@@ -92,7 +100,7 @@ def test_format_plan_review_request_no_context():
 
 
 @pytest.mark.asyncio
-async def test_review_plan_redacts_secrets_in_plan():
+async def test_review_plan_redacts_secrets_in_plan(mock_ctx):
     """review_plan must call redact_secrets on the plan text."""
     from codereview_openrouter_mcp.server import review_plan
 
@@ -104,7 +112,7 @@ async def test_review_plan_redacts_secrets_in_plan():
         patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM"),
     ):
         mock_redact.return_value = ("Use this key: ***", [{"type": "AWS Access Key", "line_number": 1}])
-        result = await review_plan(plan=plan_with_secret, model="gemini")
+        result = await review_plan(plan=plan_with_secret, model="gemini", ctx=mock_ctx)
 
     # redact_secrets must have been called with the plan text
     mock_redact.assert_called()
@@ -114,7 +122,7 @@ async def test_review_plan_redacts_secrets_in_plan():
 
 
 @pytest.mark.asyncio
-async def test_review_plan_redacts_secrets_in_codebase_context():
+async def test_review_plan_redacts_secrets_in_codebase_context(mock_ctx):
     """review_plan must call redact_secrets on codebase_context too."""
     from codereview_openrouter_mcp.server import review_plan
 
@@ -130,13 +138,13 @@ async def test_review_plan_redacts_secrets_in_codebase_context():
             ("clean plan", []),
             ("***", [{"type": "GitHub Token", "line_number": 1}]),
         ]
-        await review_plan(plan="clean plan", codebase_context=context_with_secret, model="gemini")
+        await review_plan(plan="clean plan", codebase_context=context_with_secret, model="gemini", ctx=mock_ctx)
 
     assert mock_redact.call_count == 2, "redact_secrets should be called for both plan and codebase_context"
 
 
 @pytest.mark.asyncio
-async def test_review_plan_secret_never_reaches_llm():
+async def test_review_plan_secret_never_reaches_llm(mock_ctx):
     """Integration-style: verify a fake AWS key in the plan never appears in the prompt sent to get_review."""
     from codereview_openrouter_mcp.server import review_plan
 
@@ -144,7 +152,7 @@ async def test_review_plan_secret_never_reaches_llm():
     plan_with_secret = f"Deploy with key {fake_aws_key} to prod"
 
     with patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM") as mock_get_review:
-        await review_plan(plan=plan_with_secret, model="gemini")
+        await review_plan(plan=plan_with_secret, model="gemini", ctx=mock_ctx)
 
     # Check that the prompt sent to the LLM does NOT contain the raw key
     prompt_sent = mock_get_review.call_args[0][0]  # first positional arg
@@ -374,24 +382,24 @@ async def test_multi_model_review_with_reasoning():
 
 
 @pytest.mark.asyncio
-async def test_review_oracle_works_like_review_plan():
+async def test_review_oracle_works_like_review_plan(mock_ctx):
     """review_oracle should produce the same result as review_plan."""
     from codereview_openrouter_mcp.server import review_oracle, review_plan
 
     with patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM"):
-        plan_result = await review_plan(plan="Add caching layer", model="gemini")
-        oracle_result = await review_oracle(plan="Add caching layer", model="gemini")
+        plan_result = await review_plan(plan="Add caching layer", model="gemini", ctx=mock_ctx)
+        oracle_result = await review_oracle(plan="Add caching layer", model="gemini", ctx=mock_ctx)
 
     assert plan_result == oracle_result
 
 
 @pytest.mark.asyncio
-async def test_review_oracle_passes_reasoning_config():
+async def test_review_oracle_passes_reasoning_config(mock_ctx):
     """review_oracle should pass reasoning config to get_review."""
     from codereview_openrouter_mcp.server import review_oracle
 
     with patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM") as mock:
-        await review_oracle(plan="Design a new auth system", model="openai")
+        await review_oracle(plan="Design a new auth system", model="openai", ctx=mock_ctx)
 
     _, kwargs = mock.call_args
     assert kwargs.get("extra_body") is not None
@@ -439,12 +447,12 @@ def test_diff_truncated_at_new_limit():
 
 
 @pytest.mark.asyncio
-async def test_review_plan_passes_reasoning_and_max_tokens():
+async def test_review_plan_passes_reasoning_and_max_tokens(mock_ctx):
     """review_plan should pass reasoning config and max_tokens to get_review."""
     from codereview_openrouter_mcp.server import review_plan
 
     with patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM") as mock:
-        await review_plan(plan="Implement caching", model="claude")
+        await review_plan(plan="Implement caching", model="claude", ctx=mock_ctx)
 
     _, kwargs = mock.call_args
     assert kwargs["extra_body"]["verbosity"] == "max"
@@ -453,7 +461,7 @@ async def test_review_plan_passes_reasoning_and_max_tokens():
 
 
 @pytest.mark.asyncio
-async def test_review_plan_all_uses_multi_model():
+async def test_review_plan_all_uses_multi_model(mock_ctx):
     """review_plan with model='all' should fan out to multiple models."""
     from codereview_openrouter_mcp.server import review_plan
 
@@ -464,7 +472,7 @@ async def test_review_plan_all_uses_multi_model():
         return f"Review from {model_id}"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
-        result = await review_plan(plan="Add auth", model="all")
+        result = await review_plan(plan="Add auth", model="all", ctx=mock_ctx)
 
     assert len(call_models) == 4
     assert "Gemini 3.1 Pro" in result
@@ -475,7 +483,7 @@ async def test_review_plan_all_uses_multi_model():
 
 
 @pytest.mark.asyncio
-async def test_review_diff_all_fans_out():
+async def test_review_diff_all_fans_out(mock_ctx):
     """review_diff with model='all' should produce multi-model output (first 3)."""
     from codereview_openrouter_mcp.server import review_diff
 
@@ -487,7 +495,7 @@ async def test_review_diff_all_fans_out():
         patch("codereview_openrouter_mcp.server.get_working_diff", new_callable=AsyncMock, return_value="diff --git a/f.py\n+hello"),
         patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review),
     ):
-        result = await review_diff(repo_path=".", model="all")
+        result = await review_diff(repo_path=".", model="all", ctx=mock_ctx)
 
     # Returns after first 3 models complete
     assert result.count("# Review by") == 3
