@@ -85,35 +85,55 @@ async def _do_multi_model_review(
     max_tokens: int | None = None,
 ) -> str:
     """Fan out review to all models in ALL_REVIEW_MODELS concurrently."""
-    log.info("Starting multi-model review across %d models: %s", len(ALL_REVIEW_MODELS), ALL_REVIEW_MODELS)
+    min_results = min(3, len(ALL_REVIEW_MODELS))
+    log.info("Starting multi-model review across %d models (returning after %d): %s",
+             len(ALL_REVIEW_MODELS), min_results, ALL_REVIEW_MODELS)
     t0 = time.monotonic()
 
-    tasks = [
-        _do_single_review(
-            "", model_name, system_prompt, prompt,
-            use_reasoning=use_reasoning,
-            max_tokens=max_tokens,
-        )
+    tasks = {
+        asyncio.create_task(
+            _do_single_review(
+                "", model_name, system_prompt, prompt,
+                use_reasoning=use_reasoning,
+                max_tokens=max_tokens,
+            )
+        ): model_name
         for model_name in ALL_REVIEW_MODELS
-    ]
-    results = await asyncio.gather(*tasks, return_exceptions=True)
+    }
 
     sections = []
     errors = []
-    for result in results:
-        if isinstance(result, Exception):
-            errors.append(f"Unexpected error: {result}")
+    done_count = 0
+
+    for coro in asyncio.as_completed(tasks.keys()):
+        try:
+            result = await coro
+        except Exception as e:
+            errors.append(f"Unexpected error: {e}")
+            done_count += 1
             continue
+
         model_name, review_text = result
         display_name = MODEL_DISPLAY_NAMES.get(model_name, model_name)
+        done_count += 1
+
         if review_text.startswith("Error:"):
             errors.append(f"{display_name}: {review_text}")
         else:
             sections.append(f"---\n\n# Review by {display_name}\n\n{review_text}")
 
+        if len(sections) >= min_results:
+            break
+
+    # Cancel any still-running tasks
+    for task in tasks:
+        if not task.done():
+            task.cancel()
+
     elapsed = time.monotonic() - t0
-    log.info("Multi-model review completed in %.1fs (%d succeeded, %d failed)",
-             elapsed, len(sections), len(errors))
+    remaining = len(ALL_REVIEW_MODELS) - done_count
+    log.info("Multi-model review completed in %.1fs (%d succeeded, %d failed, %d skipped)",
+             elapsed, len(sections), len(errors), remaining)
 
     parts = []
     if errors:
@@ -138,13 +158,13 @@ async def _prepare_diff(diff: str) -> str:
 
     Args:
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
-        focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
+        model: Model to use for review. Options: all, gemini, openai, claude, deepseek, kimi. Default: all (parallel multi-model review)
+        focus: Review focus. Default: all (security, architecture, edge_cases, style, abstractions). Pass a single area to narrow the review.
     """
 )
 async def review_diff(
     repo_path: str = ".",
-    model: str = "gemini",
+    model: str = "all",
     focus: str = "all",
 ) -> str:
     log.info("review_diff called: repo_path=%s, model=%s, focus=%s", repo_path, model, focus)
@@ -168,14 +188,14 @@ async def review_diff(
     Args:
         repo_path: Path to the git repository (defaults to current directory)
         sha: Commit SHA to review (defaults to HEAD)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
-        focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
+        model: Model to use for review. Options: all, gemini, openai, claude, deepseek, kimi. Default: all (parallel multi-model review)
+        focus: Review focus. Default: all (security, architecture, edge_cases, style, abstractions). Pass a single area to narrow the review.
     """
 )
 async def review_commit(
     repo_path: str = ".",
     sha: str = "HEAD",
-    model: str = "gemini",
+    model: str = "all",
     focus: str = "all",
 ) -> str:
     log.info("review_commit called: repo_path=%s, sha=%s, model=%s, focus=%s", repo_path, sha, model, focus)
@@ -200,15 +220,15 @@ async def review_commit(
         repo_path: Path to the git repository (defaults to current directory)
         branch: Branch to review
         base: Base branch to compare against (defaults to main)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
-        focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
+        model: Model to use for review. Options: all, gemini, openai, claude, deepseek, kimi. Default: all (parallel multi-model review)
+        focus: Review focus. Default: all (security, architecture, edge_cases, style, abstractions). Pass a single area to narrow the review.
     """
 )
 async def review_branch(
     branch: str,
     repo_path: str = ".",
     base: str = "main",
-    model: str = "gemini",
+    model: str = "all",
     focus: str = "all",
 ) -> str:
     log.info("review_branch called: branch=%s, base=%s, repo_path=%s, model=%s, focus=%s", branch, base, repo_path, model, focus)
@@ -232,14 +252,14 @@ async def review_branch(
     Args:
         file_path: Path to the file relative to repo_path
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
-        focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
+        model: Model to use for review. Options: all, gemini, openai, claude, deepseek, kimi. Default: all (parallel multi-model review)
+        focus: Review focus. Default: all (security, architecture, edge_cases, style, abstractions). Pass a single area to narrow the review.
     """
 )
 async def review_file(
     file_path: str,
     repo_path: str = ".",
-    model: str = "gemini",
+    model: str = "all",
     focus: str = "all",
 ) -> str:
     log.info("review_file called: file_path=%s, repo_path=%s, model=%s, focus=%s", file_path, repo_path, model, focus)
@@ -303,13 +323,13 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str) -> str:
     Args:
         plan: The plan or design document text to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+        model: Model to use for review. Options: all, gemini, openai, claude, deepseek, kimi. Default: all (parallel multi-model review)
     """
 )
 async def review_plan(
     plan: str,
     codebase_context: str = "",
-    model: str = "gemini",
+    model: str = "all",
 ) -> str:
     log.info("review_plan called: model=%s, plan_len=%d", model, len(plan))
     try:
@@ -334,13 +354,13 @@ async def review_plan(
     Args:
         plan: The plan, design document, or reasoning task to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+        model: Model to use for review. Options: all, gemini, openai, claude, deepseek, kimi. Default: all (parallel multi-model review)
     """
 )
 async def review_oracle(
     plan: str,
     codebase_context: str = "",
-    model: str = "gemini",
+    model: str = "all",
 ) -> str:
     log.info("review_oracle called: model=%s, plan_len=%d", model, len(plan))
     try:
