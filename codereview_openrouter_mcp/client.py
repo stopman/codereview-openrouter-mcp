@@ -39,7 +39,13 @@ def _is_retryable(error: Exception) -> bool:
     return False
 
 
-async def get_review(content: str, system_prompt: str, model_id: str) -> str:
+async def get_review(
+    content: str,
+    system_prompt: str,
+    model_id: str,
+    extra_body: dict | None = None,
+    max_tokens: int | None = None,
+) -> str:
     client = _get_client()
     log.debug("Calling OpenRouter API: model=%s, content_len=%d", model_id, len(content))
 
@@ -47,18 +53,23 @@ async def get_review(content: str, system_prompt: str, model_id: str) -> str:
 
     for attempt in range(MAX_RETRIES + 1):
         try:
-            response = await client.chat.completions.create(
-                model=model_id,
-                messages=[
+            kwargs: dict = {
+                "model": model_id,
+                "messages": [
                     {"role": "system", "content": system_prompt},
                     {"role": "user", "content": content},
                 ],
-                temperature=0.2,
-                extra_headers={
+                "temperature": 0.2,
+                "extra_headers": {
                     "HTTP-Referer": "https://github.com/codereview-mcp",
                     "X-OpenRouter-Title": "CodeReview MCP",
                 },
-            )
+            }
+            if max_tokens is not None:
+                kwargs["max_tokens"] = max_tokens
+            if extra_body:
+                kwargs["extra_body"] = extra_body
+            response = await client.chat.completions.create(**kwargs)
             if not response.choices:
                 log.warning("OpenRouter returned empty response (no choices)")
                 return "Error: OpenRouter returned an empty response (no choices)."

@@ -16,7 +16,12 @@ from codereview_openrouter_mcp.git_ops import (
     validate_repo,
 )
 from codereview_openrouter_mcp.logging import get_logger, setup_logging
-from codereview_openrouter_mcp.models import resolve_model
+from codereview_openrouter_mcp.models import (
+    ALL_REVIEW_MODELS,
+    MODEL_DISPLAY_NAMES,
+    get_reasoning_config,
+    resolve_model,
+)
 from codereview_openrouter_mcp.prompts import (
     PLAN_REVIEW_SYSTEM_PROMPT,
     REVIEW_SYSTEM_PROMPT,
@@ -30,21 +35,96 @@ log = get_logger("server")
 
 mcp = FastMCP("CodeReview")
 
+PLAN_MAX_TOKENS = 16384
+
+
+async def _do_single_review(
+    content: str, model_name: str, system_prompt: str, prompt: str,
+    use_reasoning: bool = False,
+    max_tokens: int | None = None,
+) -> tuple[str, str]:
+    """Run a single model review. Returns (model_name, result_text)."""
+    model_id = resolve_model(model_name)
+    extra_body = get_reasoning_config(model_name) if use_reasoning else None
+    try:
+        result = await get_review(
+            prompt, system_prompt, model_id,
+            extra_body=extra_body,
+            max_tokens=max_tokens,
+        )
+        return model_name, result
+    except Exception as e:
+        log.error("Review failed for model %s: %s", model_name, e)
+        return model_name, f"Error: Review with {model_name} failed — {e}"
+
 
 async def _do_review(content: str, model: str, focus: str, context: str = "") -> str:
-    model_id = resolve_model(model or settings.default_model)
+    model = model or settings.default_model
     content, findings = await asyncio.to_thread(redact_secrets, content)
     if findings:
         log.warning("Redacted %d potential secret(s) before sending to LLM", len(findings))
         warning = "\n".join(f"  - {f['type']} (line {f['line_number']})" for f in findings)
         context += f"\n\n⚠️ NOTICE: {len(findings)} potential secret(s) were redacted before sending:\n{warning}"
     prompt = format_review_request(content, focus=focus, context=context)
+
+    if model == "all":
+        return await _do_multi_model_review(prompt, REVIEW_SYSTEM_PROMPT)
+
+    model_id = resolve_model(model)
     log.info("Sending review request: model=%s, focus=%s, content_len=%d", model_id, focus, len(content))
     t0 = time.monotonic()
     result = await get_review(prompt, REVIEW_SYSTEM_PROMPT, model_id)
     elapsed = time.monotonic() - t0
     log.info("Review completed in %.1fs, response_len=%d", elapsed, len(result))
     return result
+
+
+async def _do_multi_model_review(
+    prompt: str, system_prompt: str,
+    use_reasoning: bool = False,
+    max_tokens: int | None = None,
+) -> str:
+    """Fan out review to all models in ALL_REVIEW_MODELS concurrently."""
+    log.info("Starting multi-model review across %d models: %s", len(ALL_REVIEW_MODELS), ALL_REVIEW_MODELS)
+    t0 = time.monotonic()
+
+    tasks = [
+        _do_single_review(
+            "", model_name, system_prompt, prompt,
+            use_reasoning=use_reasoning,
+            max_tokens=max_tokens,
+        )
+        for model_name in ALL_REVIEW_MODELS
+    ]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+
+    sections = []
+    errors = []
+    for result in results:
+        if isinstance(result, Exception):
+            errors.append(f"Unexpected error: {result}")
+            continue
+        model_name, review_text = result
+        display_name = MODEL_DISPLAY_NAMES.get(model_name, model_name)
+        if review_text.startswith("Error:"):
+            errors.append(f"{display_name}: {review_text}")
+        else:
+            sections.append(f"---\n\n# Review by {display_name}\n\n{review_text}")
+
+    elapsed = time.monotonic() - t0
+    log.info("Multi-model review completed in %.1fs (%d succeeded, %d failed)",
+             elapsed, len(sections), len(errors))
+
+    parts = []
+    if errors:
+        error_block = "\n".join(f"- {e}" for e in errors)
+        parts.append(f"⚠️ **Some models failed:**\n{error_block}\n")
+    parts.extend(sections)
+
+    if not sections:
+        return "Error: All models failed.\n\n" + "\n".join(f"- {e}" for e in errors)
+
+    return "\n\n".join(parts)
 
 
 async def _prepare_diff(diff: str) -> str:
@@ -58,7 +138,7 @@ async def _prepare_diff(diff: str) -> str:
 
     Args:
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
     """
 )
@@ -88,7 +168,7 @@ async def review_diff(
     Args:
         repo_path: Path to the git repository (defaults to current directory)
         sha: Commit SHA to review (defaults to HEAD)
-        model: Model to use for review. Options: gemini, openai, claude
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
     """
 )
@@ -120,7 +200,7 @@ async def review_commit(
         repo_path: Path to the git repository (defaults to current directory)
         branch: Branch to review
         base: Base branch to compare against (defaults to main)
-        model: Model to use for review. Options: gemini, openai, claude
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
     """
 )
@@ -152,7 +232,7 @@ async def review_branch(
     Args:
         file_path: Path to the file relative to repo_path
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
     """
 )
@@ -177,16 +257,53 @@ async def review_file(
         return f"Error: {e}"
 
 
+async def _do_plan_review(plan: str, codebase_context: str, model: str) -> str:
+    """Shared logic for review_plan and review_oracle."""
+    model = model or settings.default_model
+
+    plan, plan_findings = await asyncio.to_thread(redact_secrets, plan)
+    if codebase_context:
+        codebase_context, ctx_findings = await asyncio.to_thread(redact_secrets, codebase_context)
+    else:
+        ctx_findings = []
+    all_findings = plan_findings + ctx_findings
+    if all_findings:
+        log.warning("Redacted %d potential secret(s) from plan review input", len(all_findings))
+
+    prompt = format_plan_review_request(plan, codebase_context)
+
+    if model == "all":
+        return await _do_multi_model_review(
+            prompt, PLAN_REVIEW_SYSTEM_PROMPT,
+            use_reasoning=True, max_tokens=PLAN_MAX_TOKENS,
+        )
+
+    model_id = resolve_model(model)
+    extra_body = get_reasoning_config(model)
+
+    t0 = time.monotonic()
+    result = await get_review(
+        prompt, PLAN_REVIEW_SYSTEM_PROMPT, model_id,
+        extra_body=extra_body,
+        max_tokens=PLAN_MAX_TOKENS,
+    )
+    elapsed = time.monotonic() - t0
+    log.info("Plan review completed in %.1fs, response_len=%d", elapsed, len(result))
+    return result
+
+
 @mcp.tool(
     description="""Review a technical plan or design document.
 
     Evaluates the plan for first-principles thinking, simplicity (KISS),
     security risks, edge cases, and architecture quality.
 
+    Uses maximum reasoning effort for the deepest possible analysis.
+
     Args:
         plan: The plan or design document text to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gemini, openai, claude
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
     """
 )
 async def review_plan(
@@ -196,26 +313,40 @@ async def review_plan(
 ) -> str:
     log.info("review_plan called: model=%s, plan_len=%d", model, len(plan))
     try:
-        model_id = resolve_model(model or settings.default_model)
-
-        # Redact secrets from both user-supplied inputs
-        plan, plan_findings = await asyncio.to_thread(redact_secrets, plan)
-        if codebase_context:
-            codebase_context, ctx_findings = await asyncio.to_thread(redact_secrets, codebase_context)
-        else:
-            ctx_findings = []
-        all_findings = plan_findings + ctx_findings
-        if all_findings:
-            log.warning("Redacted %d potential secret(s) from plan review input", len(all_findings))
-
-        prompt = format_plan_review_request(plan, codebase_context)
-        t0 = time.monotonic()
-        result = await get_review(prompt, PLAN_REVIEW_SYSTEM_PROMPT, model_id)
-        elapsed = time.monotonic() - t0
-        log.info("review_plan completed in %.1fs, response_len=%d", elapsed, len(result))
-        return result
+        return await _do_plan_review(plan, codebase_context, model)
     except ValueError as e:
         log.error("review_plan failed: %s", e)
+        return f"Error: {e}"
+
+
+@mcp.tool(
+    description="""Review a technical plan, design document, or reasoning task (oracle).
+
+    This is the same as review_plan — an alias for discoverability by
+    AI coding assistants that use the term "oracle" (e.g. Amp) instead of
+    "plan" (e.g. Claude Code).
+
+    Evaluates the plan for first-principles thinking, simplicity (KISS),
+    security risks, edge cases, and architecture quality.
+
+    Uses maximum reasoning effort for the deepest possible analysis.
+
+    Args:
+        plan: The plan, design document, or reasoning task to review
+        codebase_context: Optional relevant code snippets for grounding the review
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+    """
+)
+async def review_oracle(
+    plan: str,
+    codebase_context: str = "",
+    model: str = "gemini",
+) -> str:
+    log.info("review_oracle called: model=%s, plan_len=%d", model, len(plan))
+    try:
+        return await _do_plan_review(plan, codebase_context, model)
+    except ValueError as e:
+        log.error("review_oracle failed: %s", e)
         return f"Error: {e}"
 
 

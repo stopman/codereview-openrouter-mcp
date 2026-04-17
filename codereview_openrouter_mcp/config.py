@@ -27,7 +27,7 @@ class Settings:
     def __init__(self):
         self.openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
         self.default_model: str = os.getenv("DEFAULT_MODEL", "gemini")
-        self.max_diff_chars: int = _safe_positive_int(os.getenv("MAX_DIFF_CHARS"), 100000)
+        self.max_diff_chars: int = _safe_positive_int(os.getenv("MAX_DIFF_CHARS"), 500000)
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
         self.allowed_repo_roots: list[str] = [
             p.strip() for p in os.getenv("ALLOWED_REPO_ROOTS", "").split(",") if p.strip()
