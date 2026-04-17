@@ -68,9 +68,9 @@ async def get_review(
             if extra_body:
                 kwargs["extra_body"] = extra_body
             log.info(
-                "OpenRouter request: model=%s, temperature=%.1f, max_tokens=%s, "
+                "OpenRouter request: model=%s, temperature=%s, max_tokens=%s, "
                 "extra_body=%s, prompt_len=%d, system_prompt_len=%d",
-                model_id, kwargs["temperature"], max_tokens,
+                model_id, kwargs.get("temperature"), max_tokens,
                 extra_body, len(content), len(system_prompt),
             )
             response = await client.chat.completions.create(**kwargs)

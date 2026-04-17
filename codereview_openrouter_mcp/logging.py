@@ -1,9 +1,21 @@
 import logging
 import logging.handlers
+import os
 import sys
 from pathlib import Path
 
-LOG_DIR = Path.home() / ".cache" / "codereview-mcp" / "logs"
+
+def _resolve_log_dir() -> Path:
+    env_dir = os.getenv("MCP_LOG_DIR")
+    if env_dir:
+        return Path(env_dir)
+    try:
+        return Path.home() / ".cache" / "codereview-mcp" / "logs"
+    except RuntimeError:
+        return Path("/tmp") / "codereview-mcp" / "logs"
+
+
+LOG_DIR = _resolve_log_dir()
 LOG_FILE = LOG_DIR / "server.log"
 
 
@@ -32,11 +44,14 @@ def setup_logging(level: str = "INFO") -> None:
     stderr_handler.setFormatter(fmt)
     root.addHandler(stderr_handler)
 
-    LOG_DIR.mkdir(parents=True, exist_ok=True)
-    file_handler = logging.handlers.RotatingFileHandler(
-        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3,
-    )
-    file_handler.setFormatter(fmt)
-    root.addHandler(file_handler)
+    try:
+        LOG_DIR.mkdir(mode=0o700, parents=True, exist_ok=True)
+        file_handler = logging.handlers.RotatingFileHandler(
+            LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3,
+        )
+        file_handler.setFormatter(fmt)
+        root.addHandler(file_handler)
+    except OSError:
+        print("Warning: could not create log directory, file logging disabled", file=sys.stderr)
 
     root.setLevel(getattr(logging, level.upper(), logging.INFO))
