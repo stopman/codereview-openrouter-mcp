@@ -38,6 +38,16 @@ mcp = FastMCP("CodeReview")
 PLAN_MAX_TOKENS = 16384
 
 
+async def _progress(ctx: Context | None, step: int, total: int, message: str) -> None:
+    """Report progress to the MCP client, if context is available. Never fails."""
+    if ctx is None:
+        return
+    try:
+        await _progress(ctx, step, total, message)
+    except Exception:
+        log.debug("Progress update failed", exc_info=True)
+
+
 async def _do_single_review(
     content: str, model_name: str, system_prompt: str, prompt: str,
     use_reasoning: bool = False,
@@ -68,20 +78,20 @@ async def _do_review(content: str, model: str, focus: str, ctx: Context, context
     prompt = format_review_request(content, focus=focus, context=context)
 
     if model == "all":
-        await ctx.report_progress(1, 4, "Sending to all models...")
+        await _progress(ctx, 2, 3, "Sending to all models...")
         result = await _do_multi_model_review(prompt, REVIEW_SYSTEM_PROMPT)
-        await ctx.report_progress(4, 4, "Review complete")
+        await _progress(ctx, 3, 3, "Review complete")
         return result
 
     model_id = resolve_model(model)
     display = MODEL_DISPLAY_NAMES.get(model, model_id)
     log.info("Sending review request: model=%s, focus=%s, content_len=%d", model_id, focus, len(content))
-    await ctx.report_progress(2, 4, f"Sending to {display} for review...")
+    await _progress(ctx, 2, 3, f"Sending to {display} for review...")
     t0 = time.monotonic()
     result = await get_review(prompt, REVIEW_SYSTEM_PROMPT, model_id)
     elapsed = time.monotonic() - t0
     log.info("Review completed in %.1fs, response_len=%d", elapsed, len(result))
-    await ctx.report_progress(4, 4, f"Review complete ({elapsed:.0f}s)")
+    await _progress(ctx, 3, 3, f"Review complete ({elapsed:.0f}s)")
     return result
 
 
@@ -174,18 +184,18 @@ async def review_diff(
     repo_path: str = ".",
     model: str = "gemini",
     focus: str = "all",
-    ctx: Context = None,
+    ctx: Context | None = None,
 ) -> str:
     log.info("review_diff called: repo_path=%s, model=%s, focus=%s", repo_path, model, focus)
     try:
-        await ctx.report_progress(0, 4, "Validating repository...")
+        await _progress(ctx, 0, 3, "Validating repository...")
         if not await validate_repo(repo_path):
             return f"Error: '{repo_path}' is not a git repository."
         diff = await get_working_diff(repo_path)
         if not diff.strip():
             log.info("review_diff: no working tree changes found")
             return "No working tree changes found. Nothing to review."
-        await ctx.report_progress(1, 4, f"Preparing diff ({len(diff)} chars)...")
+        await _progress(ctx, 1, 3, "Preparing diff...")
         diff = await _prepare_diff(diff)
         return await _do_review(diff, model, focus, ctx, context="Working tree diff (staged + unstaged changes)")
     except (GitError, ValueError) as e:
@@ -208,18 +218,18 @@ async def review_commit(
     sha: str = "HEAD",
     model: str = "gemini",
     focus: str = "all",
-    ctx: Context = None,
+    ctx: Context | None = None,
 ) -> str:
     log.info("review_commit called: repo_path=%s, sha=%s, model=%s, focus=%s", repo_path, sha, model, focus)
     try:
-        await ctx.report_progress(0, 4, "Validating repository...")
+        await _progress(ctx, 0, 3, "Validating repository...")
         if not await validate_repo(repo_path):
             return f"Error: '{repo_path}' is not a git repository."
         diff = await get_commit_diff(repo_path, sha)
         if not diff.strip():
             log.info("review_commit: no changes in commit %s", sha)
             return f"No changes found in commit {sha}."
-        await ctx.report_progress(1, 4, f"Preparing diff ({len(diff)} chars)...")
+        await _progress(ctx, 1, 3, "Preparing diff...")
         diff = await _prepare_diff(diff)
         return await _do_review(diff, model, focus, ctx, context=f"Commit {sanitize_context(sha)}")
     except (GitError, ValueError) as e:
@@ -244,18 +254,18 @@ async def review_branch(
     base: str = "main",
     model: str = "gemini",
     focus: str = "all",
-    ctx: Context = None,
+    ctx: Context | None = None,
 ) -> str:
     log.info("review_branch called: branch=%s, base=%s, repo_path=%s, model=%s, focus=%s", branch, base, repo_path, model, focus)
     try:
-        await ctx.report_progress(0, 4, "Validating repository...")
+        await _progress(ctx, 0, 3, "Validating repository...")
         if not await validate_repo(repo_path):
             return f"Error: '{repo_path}' is not a git repository."
         diff = await get_branch_diff(repo_path, branch, base)
         if not diff.strip():
             log.info("review_branch: no changes between %s and %s", base, branch)
             return f"No changes found between {base} and {branch}."
-        await ctx.report_progress(1, 4, f"Preparing diff ({len(diff)} chars)...")
+        await _progress(ctx, 1, 3, "Preparing diff...")
         diff = await _prepare_diff(diff)
         return await _do_review(diff, model, focus, ctx, context=f"Branch {sanitize_context(branch)} vs {sanitize_context(base)}")
     except (GitError, ValueError) as e:
@@ -278,18 +288,18 @@ async def review_file(
     repo_path: str = ".",
     model: str = "gemini",
     focus: str = "all",
-    ctx: Context = None,
+    ctx: Context | None = None,
 ) -> str:
     log.info("review_file called: file_path=%s, repo_path=%s, model=%s, focus=%s", file_path, repo_path, model, focus)
     try:
-        await ctx.report_progress(0, 4, "Validating repository...")
+        await _progress(ctx, 0, 3, "Validating repository...")
         if not await validate_repo(repo_path):
             return f"Error: '{repo_path}' is not a git repository."
         content = await get_file_content(repo_path, file_path)
         if not content.strip():
             log.info("review_file: file '%s' is empty", file_path)
             return f"File '{file_path}' is empty. Nothing to review."
-        await ctx.report_progress(1, 4, f"Reading file ({len(content)} chars)...")
+        await _progress(ctx, 1, 3, "Reading file...")
         content = truncate_diff(content, settings.max_diff_chars)
         return await _do_review(content, model, focus, ctx, context=f"Full file review: {sanitize_context(file_path)}")
     except (GitError, ValueError) as e:
@@ -313,19 +323,19 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str, ctx: Con
     prompt = format_plan_review_request(plan, codebase_context)
 
     if model == "all":
-        await ctx.report_progress(1, 3, "Sending plan to all models...")
+        await _progress(ctx, 1, 2, "Sending plan to all models...")
         result = await _do_multi_model_review(
             prompt, PLAN_REVIEW_SYSTEM_PROMPT,
             use_reasoning=True, max_tokens=PLAN_MAX_TOKENS,
         )
-        await ctx.report_progress(3, 3, "Plan review complete")
+        await _progress(ctx, 2, 2, "Plan review complete")
         return result
 
     model_id = resolve_model(model)
     display = MODEL_DISPLAY_NAMES.get(model, model_id)
     extra_body = get_reasoning_config(model)
 
-    await ctx.report_progress(1, 3, f"Sending plan to {display} for review...")
+    await _progress(ctx, 1, 2, f"Sending plan to {display} for review...")
     t0 = time.monotonic()
     result = await get_review(
         prompt, PLAN_REVIEW_SYSTEM_PROMPT, model_id,
@@ -334,7 +344,7 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str, ctx: Con
     )
     elapsed = time.monotonic() - t0
     log.info("Plan review completed in %.1fs, response_len=%d", elapsed, len(result))
-    await ctx.report_progress(3, 3, f"Plan review complete ({elapsed:.0f}s)")
+    await _progress(ctx, 2, 2, f"Plan review complete ({elapsed:.0f}s)")
     return result
 
 
@@ -356,11 +366,11 @@ async def review_plan(
     plan: str,
     codebase_context: str = "",
     model: str = "gemini",
-    ctx: Context = None,
+    ctx: Context | None = None,
 ) -> str:
     log.info("review_plan called: model=%s, plan_len=%d", model, len(plan))
     try:
-        await ctx.report_progress(0, 3, "Preparing plan review...")
+        await _progress(ctx, 0, 2, "Preparing plan review...")
         return await _do_plan_review(plan, codebase_context, model, ctx)
     except ValueError as e:
         log.error("review_plan failed: %s", e)
@@ -389,11 +399,11 @@ async def review_oracle(
     plan: str,
     codebase_context: str = "",
     model: str = "gemini",
-    ctx: Context = None,
+    ctx: Context | None = None,
 ) -> str:
     log.info("review_oracle called: model=%s, plan_len=%d", model, len(plan))
     try:
-        await ctx.report_progress(0, 3, "Preparing plan review...")
+        await _progress(ctx, 0, 2, "Preparing plan review...")
         return await _do_plan_review(plan, codebase_context, model, ctx)
     except ValueError as e:
         log.error("review_oracle failed: %s", e)
