@@ -79,7 +79,7 @@ async def _do_review(content: str, model: str, focus: str, ctx: Context, context
 
     if model == "all":
         await _progress(ctx, 2, 3, "Sending to all models...")
-        result = await _do_multi_model_review(prompt, REVIEW_SYSTEM_PROMPT)
+        result = await _do_multi_model_review(prompt, REVIEW_SYSTEM_PROMPT, ctx=ctx)
         await _progress(ctx, 3, 3, "Review complete")
         return result
 
@@ -99,6 +99,7 @@ async def _do_multi_model_review(
     prompt: str, system_prompt: str,
     use_reasoning: bool = False,
     max_tokens: int | None = None,
+    ctx: Context | None = None,
 ) -> str:
     """Fan out review to all models in ALL_REVIEW_MODELS concurrently."""
     min_results = min(3, len(ALL_REVIEW_MODELS))
@@ -137,6 +138,10 @@ async def _do_multi_model_review(
             errors.append(f"{display_name}: {review_text}")
         else:
             sections.append(f"---\n\n# Review by {display_name}\n\n{review_text}")
+            await _progress(
+                ctx, len(sections), min_results,
+                f"{display_name} complete ({len(sections)}/{min_results})",
+            )
 
         if len(sections) >= min_results:
             break
@@ -326,7 +331,7 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str, ctx: Con
         await _progress(ctx, 1, 2, "Sending plan to all models...")
         result = await _do_multi_model_review(
             prompt, PLAN_REVIEW_SYSTEM_PROMPT,
-            use_reasoning=True, max_tokens=PLAN_MAX_TOKENS,
+            use_reasoning=True, max_tokens=PLAN_MAX_TOKENS, ctx=ctx,
         )
         await _progress(ctx, 2, 2, "Plan review complete")
         return result
