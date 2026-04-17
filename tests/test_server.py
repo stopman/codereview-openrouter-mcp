@@ -294,7 +294,7 @@ def test_reasoning_config_kimi_uses_enabled():
 
 @pytest.mark.asyncio
 async def test_multi_model_review_all_succeed():
-    """model='all' should return combined results from all models."""
+    """model='all' should return results from first 3 models that complete."""
     from codereview_openrouter_mcp.server import _do_multi_model_review
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
@@ -303,10 +303,8 @@ async def test_multi_model_review_all_succeed():
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         result = await _do_multi_model_review("test prompt", "system prompt")
 
-    assert "Gemini 3.1 Pro" in result
-    assert "GPT-5.3 Codex" in result
-    assert "DeepSeek V3.2 Speciale" in result
-    assert "Kimi K2 Thinking" in result
+    # Should have exactly 3 review sections (returns after first 3)
+    assert result.count("# Review by") == 3
     assert "failed" not in result.lower()
 
 
@@ -478,7 +476,7 @@ async def test_review_plan_all_uses_multi_model():
 
 @pytest.mark.asyncio
 async def test_review_diff_all_fans_out():
-    """review_diff with model='all' should produce multi-model output."""
+    """review_diff with model='all' should produce multi-model output (first 3)."""
     from codereview_openrouter_mcp.server import review_diff
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
@@ -491,7 +489,5 @@ async def test_review_diff_all_fans_out():
     ):
         result = await review_diff(repo_path=".", model="all")
 
-    assert "Gemini 3.1 Pro" in result
-    assert "GPT-5.3 Codex" in result
-    assert "DeepSeek V3.2 Speciale" in result
-    assert "Kimi K2 Thinking" in result
+    # Returns after first 3 models complete
+    assert result.count("# Review by") == 3
