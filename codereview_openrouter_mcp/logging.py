@@ -1,5 +1,10 @@
 import logging
+import logging.handlers
 import sys
+from pathlib import Path
+
+LOG_DIR = Path.home() / ".cache" / "codereview-mcp" / "logs"
+LOG_FILE = LOG_DIR / "server.log"
 
 
 def get_logger(name: str) -> logging.Logger:
@@ -18,12 +23,20 @@ def setup_logging(level: str = "INFO") -> None:
     if root.handlers:
         return  # already configured
 
-    handler = logging.StreamHandler(sys.stderr)
-    handler.setFormatter(
-        logging.Formatter(
-            fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-            datefmt="%Y-%m-%dT%H:%M:%S",
-        )
+    fmt = logging.Formatter(
+        fmt="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        datefmt="%Y-%m-%dT%H:%M:%S",
     )
-    root.addHandler(handler)
+
+    stderr_handler = logging.StreamHandler(sys.stderr)
+    stderr_handler.setFormatter(fmt)
+    root.addHandler(stderr_handler)
+
+    LOG_DIR.mkdir(parents=True, exist_ok=True)
+    file_handler = logging.handlers.RotatingFileHandler(
+        LOG_FILE, maxBytes=5 * 1024 * 1024, backupCount=3,
+    )
+    file_handler.setFormatter(fmt)
+    root.addHandler(file_handler)
+
     root.setLevel(getattr(logging, level.upper(), logging.INFO))

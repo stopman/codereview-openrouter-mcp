@@ -148,8 +148,10 @@ async def _do_multi_model_review(
 
 
 async def _prepare_diff(diff: str) -> str:
+    raw_len = len(diff)
     diff = filter_binary_diffs(diff)
     diff = truncate_diff(diff, settings.max_diff_chars)
+    log.info("Diff prepared: raw=%d chars, after_filter=%d chars", raw_len, len(diff))
     return diff
 
 

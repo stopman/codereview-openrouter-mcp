@@ -47,8 +47,6 @@ async def get_review(
     max_tokens: int | None = None,
 ) -> str:
     client = _get_client()
-    log.debug("Calling OpenRouter API: model=%s, content_len=%d", model_id, len(content))
-
     total_wait = 0.0
 
     for attempt in range(MAX_RETRIES + 1):
@@ -69,6 +67,12 @@ async def get_review(
                 kwargs["max_tokens"] = max_tokens
             if extra_body:
                 kwargs["extra_body"] = extra_body
+            log.info(
+                "OpenRouter request: model=%s, temperature=%.1f, max_tokens=%s, "
+                "extra_body=%s, prompt_len=%d, system_prompt_len=%d",
+                model_id, kwargs["temperature"], max_tokens,
+                extra_body, len(content), len(system_prompt),
+            )
             response = await client.chat.completions.create(**kwargs)
             if not response.choices:
                 log.warning("OpenRouter returned empty response (no choices)")
