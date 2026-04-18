@@ -36,6 +36,7 @@ log = get_logger("server")
 mcp = FastMCP("CodeReview")
 
 PLAN_MAX_TOKENS = 16384
+MIN_MULTI_MODEL_RESULTS = 3
 
 
 async def _do_single_review(
@@ -84,28 +85,32 @@ async def _do_multi_model_review(
     use_reasoning: bool = False,
     max_tokens: int | None = None,
 ) -> str:
-    """Fan out review to all models in ALL_REVIEW_MODELS concurrently."""
-    min_results = min(3, len(ALL_REVIEW_MODELS))
+    """Fan out review to all models in ALL_REVIEW_MODELS concurrently.
+
+    Returns results from the fastest MIN_MULTI_MODEL_RESULTS models,
+    cancelling any still-running tasks.
+    """
+    min_results = min(MIN_MULTI_MODEL_RESULTS, len(ALL_REVIEW_MODELS))
     log.info("Starting multi-model review across %d models (returning after %d): %s",
              len(ALL_REVIEW_MODELS), min_results, ALL_REVIEW_MODELS)
     t0 = time.monotonic()
 
-    tasks = {
+    tasks = [
         asyncio.create_task(
             _do_single_review(
                 "", model_name, system_prompt, prompt,
                 use_reasoning=use_reasoning,
                 max_tokens=max_tokens,
             )
-        ): model_name
+        )
         for model_name in ALL_REVIEW_MODELS
-    }
+    ]
 
     sections = []
     errors = []
     done_count = 0
 
-    for coro in asyncio.as_completed(tasks.keys()):
+    for coro in asyncio.as_completed(tasks):
         try:
             result = await coro
         except Exception as e:
@@ -125,10 +130,12 @@ async def _do_multi_model_review(
         if len(sections) >= min_results:
             break
 
-    # Cancel any still-running tasks
-    for task in tasks:
-        if not task.done():
-            task.cancel()
+    # Cancel still-running tasks and await them to avoid resource leaks
+    pending = [task for task in tasks if not task.done()]
+    for task in pending:
+        task.cancel()
+    if pending:
+        await asyncio.gather(*pending, return_exceptions=True)
 
     elapsed = time.monotonic() - t0
     remaining = len(ALL_REVIEW_MODELS) - done_count
