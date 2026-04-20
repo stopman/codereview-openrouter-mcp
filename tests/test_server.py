@@ -216,7 +216,7 @@ def test_resolve_model_deepseek():
 def test_resolve_model_kimi():
     from codereview_openrouter_mcp.models import resolve_model
 
-    assert resolve_model("kimi") == "moonshotai/kimi-k2-thinking"
+    assert resolve_model("kimi") == "moonshotai/kimi-k2.6"
 
 
 def test_resolve_model_invalid():
@@ -336,7 +336,7 @@ async def test_multi_model_review_partial_failure():
     # Should still have results from the other models
     assert "Gemini 3.1 Pro" in result
     assert "GPT-5.3 Codex" in result
-    assert "Kimi K2 Thinking" in result
+    assert "Kimi K2.6" in result
     # Should note the failure
     assert "failed" in result.lower() or "error" in result.lower()
 

@@ -3,7 +3,7 @@ MODELS: dict[str, str] = {
     "openai": "openai/gpt-5.3-codex",
     "claude": "anthropic/claude-opus-4.7",
     "deepseek": "deepseek/deepseek-v3.2-speciale",
-    "kimi": "moonshotai/kimi-k2-thinking",
+    "kimi": "moonshotai/kimi-k2.6",
 }
 
 DEFAULT_MODEL = "gemini"
@@ -17,7 +17,7 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
     "openai": "GPT-5.3 Codex",
     "claude": "Claude Opus 4.7",
     "deepseek": "DeepSeek V3.2 Speciale",
-    "kimi": "Kimi K2 Thinking",
+    "kimi": "Kimi K2.6",
 }
 
 # Per-model reasoning configuration for maximum effort via OpenRouter.
@@ -27,7 +27,7 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
 #   - Anthropic/Claude 4.6: uses verbosity="max" + reasoning.effort="xhigh"
 #   - Gemini 3: xhigh maps down to "high" (Google's max thinkingLevel)
 #   - DeepSeek: reasoning.enabled boolean toggle
-#   - Kimi K2 Thinking: native reasoning model, enabled by default
+#   - Kimi K2.6: native reasoning model, enabled by default
 REASONING_CONFIG: dict[str, dict] = {
     "gemini": {"reasoning": {"effort": "high"}},
     "openai": {"reasoning": {"effort": "xhigh"}},
