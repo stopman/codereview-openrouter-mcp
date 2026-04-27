@@ -4,7 +4,7 @@ from dotenv import load_dotenv
 
 from codereview_openrouter_mcp.logging import get_logger
 
-load_dotenv()
+load_dotenv(override=True)
 
 log = get_logger("config")
 

@@ -2,7 +2,7 @@
 
 An MCP server that gives your AI coding assistant access to **staff/principal-engineer-level code review** from the world's best LLMs — all through a single OpenRouter API key.
 
-Pick your reviewer per-request: **Gemini 3.1 Pro**, **GPT-5.3 Codex**, **Claude Opus 4.7**, **DeepSeek V3.2 Speciale**, or **Kimi K2.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
+Pick your reviewer per-request: **Gemini 3.1 Pro**, **GPT-5.3 Codex**, **Claude Opus 4.7**, **DeepSeek V4 Pro**, or **Kimi K2.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
 
 ## Why this exists
 
@@ -172,7 +172,7 @@ review_oracle(plan="We plan to...", codebase_context="", model="gemini")
 | `gemini` | Google Gemini 3.1 Pro | Large diffs, fast turnaround |
 | `openai` | OpenAI GPT-5.3 Codex | Deep code understanding |
 | `claude` | Anthropic Claude Opus 4.7 | Nuanced architectural feedback |
-| `deepseek` | DeepSeek V3.2 Speciale | Cost-effective deep reasoning |
+| `deepseek` | DeepSeek V4 Pro | Cost-effective deep reasoning |
 | `kimi` | Kimi K2.6 | Long-horizon coding, multimodal |
 | `all` | All of the above (parallel) | Multi-perspective review |
 

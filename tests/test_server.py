@@ -210,7 +210,7 @@ def test_resolve_model_all_known_models():
 def test_resolve_model_deepseek():
     from codereview_openrouter_mcp.models import resolve_model
 
-    assert resolve_model("deepseek") == "deepseek/deepseek-v3.2-speciale"
+    assert resolve_model("deepseek") == "deepseek/deepseek-v4-pro"
 
 
 def test_resolve_model_kimi():

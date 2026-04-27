@@ -2,7 +2,7 @@ MODELS: dict[str, str] = {
     "gemini": "google/gemini-3.1-pro-preview",
     "openai": "openai/gpt-5.3-codex",
     "claude": "anthropic/claude-opus-4.7",
-    "deepseek": "deepseek/deepseek-v3.2-speciale",
+    "deepseek": "deepseek/deepseek-v4-pro",
     "kimi": "moonshotai/kimi-k2.6",
 }
 
@@ -16,7 +16,7 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
     "gemini": "Gemini 3.1 Pro",
     "openai": "GPT-5.3 Codex",
     "claude": "Claude Opus 4.7",
-    "deepseek": "DeepSeek V3.2 Speciale",
+    "deepseek": "DeepSeek V4 Pro",
     "kimi": "Kimi K2.6",
 }
 
