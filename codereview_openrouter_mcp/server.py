@@ -26,6 +26,7 @@ from codereview_openrouter_mcp.models import (
 from codereview_openrouter_mcp.prompts import (
     format_plan_review_request,
     format_review_request,
+    format_synthesis_request,
     get_persona,
     get_plan_review_system_prompt,
     get_review_system_prompt,
@@ -88,7 +89,11 @@ async def _do_review(content: str, model: str, focus: str, progress: _Progress, 
     prompt = format_review_request(content, focus=focus, context=context)
 
     if model == "all":
-        result = await _do_multi_model_review(prompt, get_review_system_prompt, progress=progress)
+        result = await _do_multi_model_review(
+            prompt, get_review_system_prompt,
+            progress=progress,
+            synthesizer_model=settings.synthesizer_model or None,
+        )
         await progress.update("Review complete")
         return result
 
@@ -113,12 +118,19 @@ async def _do_multi_model_review(
     use_reasoning: bool = False,
     max_tokens: int | None = None,
     progress: _Progress | None = None,
+    synthesizer_model: str | None = None,
 ) -> str:
     """Fan out review to all models in ALL_REVIEW_MODELS concurrently.
 
     Each model receives the system prompt returned by `system_prompt_fn(model_name)`,
     so a multi-model panel can mix personas (architect / detail / simplicity /
     pragmatist) rather than asking every model the same generic question.
+
+    If `synthesizer_model` is set, after the panel completes a final synthesis
+    step runs sequentially: the synthesizer model receives the panel reviews as
+    input (wrapped in <panel_review> XML tags) and produces a tradeoff-focused
+    final recommendation. A synthesizer failure does NOT fail the request — the
+    panel reviews are still returned with a fallback note.
     """
     min_results = min(3, len(ALL_REVIEW_MODELS))
     log.info("Starting multi-model review across %d models (returning after %d): %s",
@@ -137,6 +149,7 @@ async def _do_multi_model_review(
     }
 
     sections = []
+    panel_for_synth: list[tuple[str, str]] = []  # (label, raw review text)
     errors = []
     done_count = 0
 
@@ -159,6 +172,9 @@ async def _do_multi_model_review(
             errors.append(f"{display_name}{persona_label}: {review_text}")
         else:
             sections.append(f"---\n\n# Review by {display_name}{persona_label}\n\n{review_text}")
+            panel_for_synth.append(
+                (f"{display_name} ({persona or 'default'})", review_text)
+            )
             if progress:
                 await progress.update(
                     f"{display_name} complete ({len(sections)}/{min_results})",
@@ -177,6 +193,22 @@ async def _do_multi_model_review(
     log.info("Multi-model review completed in %.1fs (%d succeeded, %d failed, %d skipped)",
              elapsed, len(sections), len(errors), remaining)
 
+    # Synthesizer step: only run if we have at least one panel review AND a
+    # synthesizer was requested. A synthesizer failure must not fail the
+    # request — degrade gracefully and return the panel reviews regardless.
+    if synthesizer_model and panel_for_synth:
+        synth_section = await _run_synthesizer(
+            synthesizer_model=synthesizer_model,
+            original_prompt=prompt,
+            panel_for_synth=panel_for_synth,
+            system_prompt_fn=system_prompt_fn,
+            use_reasoning=use_reasoning,
+            max_tokens=max_tokens,
+            progress=progress,
+        )
+        if synth_section:
+            sections.append(synth_section)
+
     parts = []
     if errors:
         error_block = "\n".join(f"- {e}" for e in errors)
@@ -189,12 +221,82 @@ async def _do_multi_model_review(
     return "\n\n".join(parts)
 
 
+async def _run_synthesizer(
+    synthesizer_model: str,
+    original_prompt: str,
+    panel_for_synth: list[tuple[str, str]],
+    system_prompt_fn: Callable[[str], str],
+    use_reasoning: bool,
+    max_tokens: int | None,
+    progress: _Progress | None,
+) -> str | None:
+    """Run the synthesizer model on the panel reviews. Returns the rendered
+    Markdown section, or None if the synthesizer was skipped due to an error.
+    Never raises — synthesizer failures degrade gracefully.
+    """
+    display_name = MODEL_DISPLAY_NAMES.get(synthesizer_model, synthesizer_model)
+    persona = get_persona(synthesizer_model) or "synthesizer"
+    log.info("Running synthesizer model=%s (%s) over %d panel reviews",
+             synthesizer_model, persona, len(panel_for_synth))
+    if progress:
+        await progress.update(f"Synthesizing with {display_name} ({persona})...")
+
+    try:
+        model_id = resolve_model(synthesizer_model)
+    except ValueError as e:
+        log.warning("Synthesizer skipped — unknown model %s: %s", synthesizer_model, e)
+        return (
+            f"---\n\n# Synthesis by {synthesizer_model} — skipped\n\n"
+            f"*Synthesizer model '{synthesizer_model}' is not configured.*"
+        )
+
+    synth_system_prompt = system_prompt_fn(synthesizer_model)
+    synth_user_prompt = format_synthesis_request(original_prompt, panel_for_synth)
+    extra_body = get_reasoning_config(synthesizer_model) if use_reasoning else None
+
+    t0 = time.monotonic()
+    try:
+        result = await get_review(
+            synth_user_prompt, synth_system_prompt, model_id,
+            extra_body=extra_body,
+            max_tokens=max_tokens,
+        )
+    except Exception as e:  # never let the synthesizer fail the whole request
+        log.error("Synthesizer call raised: %s", e, exc_info=True)
+        return (
+            f"---\n\n# Synthesis by {display_name} — failed\n\n"
+            f"*The panel reviews completed but the synthesizer step failed: {e}. "
+            f"The panel reviews above remain valid.*"
+        )
+
+    elapsed = time.monotonic() - t0
+    if result.startswith("Error:"):
+        log.warning("Synthesizer returned error in %.1fs: %s", elapsed, result)
+        return (
+            f"---\n\n# Synthesis by {display_name} — failed\n\n"
+            f"*{result} The panel reviews above remain valid.*"
+        )
+
+    log.info("Synthesis completed in %.1fs, response_len=%d", elapsed, len(result))
+    if progress:
+        await progress.update(f"Synthesis complete ({elapsed:.0f}s)")
+    return f"---\n\n# Synthesis by {display_name} — {persona} persona\n\n{result}"
+
+
 async def _prepare_diff(diff: str) -> str:
     raw_len = len(diff)
     diff = filter_binary_diffs(diff)
     diff = truncate_diff(diff, settings.max_diff_chars)
     log.info("Diff prepared: raw=%d chars, after_filter=%d chars", raw_len, len(diff))
     return diff
+
+
+def _synth_progress_steps(model: str) -> int:
+    """Number of extra progress updates the synthesizer step will emit
+    (one for "synthesizing...", one for "synthesis complete")."""
+    if model == "all" and settings.synthesizer_model:
+        return 2
+    return 0
 
 
 @mcp.tool(
@@ -214,7 +316,7 @@ async def review_diff(
 ) -> str:
     log.info("review_diff called: repo_path=%s, model=%s, focus=%s", repo_path, model, focus)
     min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 2 + (min_results + 1 if model == "all" else 2)
+    total = 2 + (min_results + 1 if model == "all" else 2) + _synth_progress_steps(model)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Validating repository...")
@@ -251,7 +353,7 @@ async def review_commit(
 ) -> str:
     log.info("review_commit called: repo_path=%s, sha=%s, model=%s, focus=%s", repo_path, sha, model, focus)
     min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 2 + (min_results + 1 if model == "all" else 2)
+    total = 2 + (min_results + 1 if model == "all" else 2) + _synth_progress_steps(model)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Validating repository...")
@@ -290,7 +392,7 @@ async def review_branch(
 ) -> str:
     log.info("review_branch called: branch=%s, base=%s, repo_path=%s, model=%s, focus=%s", branch, base, repo_path, model, focus)
     min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 2 + (min_results + 1 if model == "all" else 2)
+    total = 2 + (min_results + 1 if model == "all" else 2) + _synth_progress_steps(model)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Validating repository...")
@@ -327,7 +429,7 @@ async def review_file(
 ) -> str:
     log.info("review_file called: file_path=%s, repo_path=%s, model=%s, focus=%s", file_path, repo_path, model, focus)
     min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 2 + (min_results + 1 if model == "all" else 2)
+    total = 2 + (min_results + 1 if model == "all" else 2) + _synth_progress_steps(model)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Validating repository...")
@@ -364,6 +466,7 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str, progress
         result = await _do_multi_model_review(
             prompt, get_plan_review_system_prompt,
             use_reasoning=True, max_tokens=PLAN_MAX_TOKENS, progress=progress,
+            synthesizer_model=settings.synthesizer_model or None,
         )
         await progress.update("Plan review complete")
         return result
@@ -409,7 +512,7 @@ async def review_plan(
 ) -> str:
     log.info("review_plan called: model=%s, plan_len=%d", model, len(plan))
     min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 1 + (min_results + 1 if model == "all" else 2)
+    total = 1 + (min_results + 1 if model == "all" else 2) + _synth_progress_steps(model)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Preparing plan review...")
@@ -445,7 +548,7 @@ async def review_oracle(
 ) -> str:
     log.info("review_oracle called: model=%s, plan_len=%d", model, len(plan))
     min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 1 + (min_results + 1 if model == "all" else 2)
+    total = 1 + (min_results + 1 if model == "all" else 2) + _synth_progress_steps(model)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Preparing plan review...")
