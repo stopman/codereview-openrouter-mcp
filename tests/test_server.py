@@ -300,6 +300,11 @@ def test_reasoning_config_kimi_uses_enabled():
 # --- Multi-model review tests ---
 
 
+def _fixed_prompt_fn(prompt: str):
+    """Helper: build a system_prompt_fn that returns the same prompt for every model."""
+    return lambda _model_name: prompt
+
+
 @pytest.mark.asyncio
 async def test_multi_model_review_all_succeed():
     """model='all' should return results from first 3 models that complete."""
@@ -309,7 +314,7 @@ async def test_multi_model_review_all_succeed():
         return f"Review from {model_id}"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
-        result = await _do_multi_model_review("test prompt", "system prompt")
+        result = await _do_multi_model_review("test prompt", _fixed_prompt_fn("system prompt"))
 
     # Should have exactly 3 review sections (returns after first 3)
     assert result.count("# Review by") == 3
@@ -331,7 +336,7 @@ async def test_multi_model_review_partial_failure():
         return f"Review from {model_id}"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
-        result = await _do_multi_model_review("test prompt", "system prompt")
+        result = await _do_multi_model_review("test prompt", _fixed_prompt_fn("system prompt"))
 
     # Should still have results from the other models
     assert "Gemini 3.1 Pro" in result
@@ -350,7 +355,7 @@ async def test_multi_model_review_all_fail():
         raise Exception(f"{model_id} is down")
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
-        result = await _do_multi_model_review("test prompt", "system prompt")
+        result = await _do_multi_model_review("test prompt", _fixed_prompt_fn("system prompt"))
 
     assert "Error: All models failed" in result
 
@@ -368,7 +373,7 @@ async def test_multi_model_review_with_reasoning():
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await _do_multi_model_review(
-            "test prompt", "system prompt",
+            "test prompt", _fixed_prompt_fn("system prompt"),
             use_reasoning=True, max_tokens=16384,
         )
 
@@ -499,3 +504,179 @@ async def test_review_diff_all_fans_out(mock_ctx):
 
     # Returns after first 3 models complete
     assert result.count("# Review by") == 3
+
+
+# --- Persona dispatch tests ---
+
+
+def test_persona_map_covers_all_review_models():
+    """Every model in ALL_REVIEW_MODELS must have a persona assigned."""
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
+    from codereview_openrouter_mcp.prompts import PERSONA_MAP
+
+    for name in ALL_REVIEW_MODELS:
+        assert name in PERSONA_MAP, f"Model '{name}' has no persona assigned in PERSONA_MAP"
+
+
+def test_personas_unique_across_all_review_models():
+    """Each model in the multi-model panel must have a distinct persona —
+    otherwise the panel returns duplicate perspectives."""
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
+    from codereview_openrouter_mcp.prompts import PERSONA_MAP
+
+    personas = [PERSONA_MAP[name] for name in ALL_REVIEW_MODELS]
+    assert len(personas) == len(set(personas)), (
+        f"Duplicate personas in ALL_REVIEW_MODELS: {personas}"
+    )
+
+
+def test_persona_map_assigns_expected_personas():
+    """Lock in the per-model persona mapping the user requested."""
+    from codereview_openrouter_mcp.prompts import (
+        PERSONA_ARCHITECT,
+        PERSONA_DETAIL,
+        PERSONA_MAP,
+        PERSONA_PRAGMATIST,
+        PERSONA_SIMPLICITY,
+    )
+
+    assert PERSONA_MAP["gemini"] == PERSONA_ARCHITECT
+    assert PERSONA_MAP["openai"] == PERSONA_DETAIL
+    assert PERSONA_MAP["deepseek"] == PERSONA_SIMPLICITY
+    assert PERSONA_MAP["kimi"] == PERSONA_PRAGMATIST
+
+
+def test_get_review_system_prompt_returns_persona_specific():
+    """Each model should get its persona's distinctive prompt content."""
+    from codereview_openrouter_mcp.prompts import get_review_system_prompt
+
+    architect = get_review_system_prompt("gemini")
+    detail = get_review_system_prompt("openai")
+    simplicity = get_review_system_prompt("deepseek")
+    pragmatist = get_review_system_prompt("kimi")
+
+    # Each should be distinct
+    assert len({architect, detail, simplicity, pragmatist}) == 4
+
+    # Each should self-identify its persona in the prompt
+    assert "Architect" in architect
+    assert "Detail-Oriented" in detail
+    assert "First-Principles" in simplicity or "Simplicity" in simplicity
+    assert "Pragmatist" in pragmatist or "Production" in pragmatist
+
+
+def test_get_review_system_prompt_unmapped_falls_back():
+    """An unmapped model name should fall back to the comprehensive default."""
+    from codereview_openrouter_mcp.prompts import REVIEW_SYSTEM_PROMPT, get_review_system_prompt
+
+    assert get_review_system_prompt("nonexistent_model") == REVIEW_SYSTEM_PROMPT
+
+
+def test_get_plan_review_system_prompt_returns_persona_specific():
+    """Plan-review prompts must also be persona-specific."""
+    from codereview_openrouter_mcp.prompts import get_plan_review_system_prompt
+
+    architect = get_plan_review_system_prompt("gemini")
+    detail = get_plan_review_system_prompt("openai")
+    simplicity = get_plan_review_system_prompt("deepseek")
+    pragmatist = get_plan_review_system_prompt("kimi")
+
+    assert len({architect, detail, simplicity, pragmatist}) == 4
+    assert "Architect" in architect
+    assert "Detail-Oriented" in detail
+
+
+def test_get_plan_review_system_prompt_unmapped_falls_back():
+    from codereview_openrouter_mcp.prompts import (
+        PLAN_REVIEW_SYSTEM_PROMPT,
+        get_plan_review_system_prompt,
+    )
+
+    assert get_plan_review_system_prompt("nonexistent_model") == PLAN_REVIEW_SYSTEM_PROMPT
+
+
+@pytest.mark.asyncio
+async def test_multi_model_review_dispatches_per_model_persona():
+    """When fanning out, each model should receive its own persona's system prompt."""
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS, resolve_model
+    from codereview_openrouter_mcp.prompts import get_review_system_prompt
+    from codereview_openrouter_mcp.server import _do_multi_model_review
+
+    captured: dict[str, str] = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured[model_id] = system_prompt
+        return f"Review from {model_id}"
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        await _do_multi_model_review("test prompt", get_review_system_prompt)
+
+    # Every model that ran should have received its expected persona prompt.
+    for name in ALL_REVIEW_MODELS:
+        model_id = resolve_model(name)
+        if model_id not in captured:
+            continue  # may have been cancelled after min_results reached
+        assert captured[model_id] == get_review_system_prompt(name), (
+            f"Model {name} did not receive its persona prompt"
+        )
+
+
+@pytest.mark.asyncio
+async def test_review_diff_single_model_uses_persona_prompt(mock_ctx):
+    """Single-model review_diff should send the per-model persona prompt."""
+    from codereview_openrouter_mcp.prompts import get_review_system_prompt
+    from codereview_openrouter_mcp.server import review_diff
+
+    captured = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured["system_prompt"] = system_prompt
+        captured["model_id"] = model_id
+        return "LGTM"
+
+    with (
+        patch("codereview_openrouter_mcp.server.validate_repo", new_callable=AsyncMock, return_value=True),
+        patch("codereview_openrouter_mcp.server.get_working_diff", new_callable=AsyncMock, return_value="diff --git a/f.py\n+x"),
+        patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review),
+    ):
+        await review_diff(repo_path=".", model="deepseek", ctx=mock_ctx)
+
+    assert captured["system_prompt"] == get_review_system_prompt("deepseek")
+    # And it must be the simplicity persona, not the generic default
+    assert "First-Principles" in captured["system_prompt"] or "Simplicity" in captured["system_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_review_plan_single_model_uses_persona_prompt(mock_ctx):
+    """Single-model review_plan should send the per-model plan-review persona prompt."""
+    from codereview_openrouter_mcp.prompts import get_plan_review_system_prompt
+    from codereview_openrouter_mcp.server import review_plan
+
+    captured = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured["system_prompt"] = system_prompt
+        return "LGTM"
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        await review_plan(plan="Add caching layer", model="kimi", ctx=mock_ctx)
+
+    assert captured["system_prompt"] == get_plan_review_system_prompt("kimi")
+    assert "Pragmatist" in captured["system_prompt"] or "Production" in captured["system_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_multi_model_review_section_header_includes_persona():
+    """The aggregated multi-model output should label each section with its persona."""
+    from codereview_openrouter_mcp.prompts import get_review_system_prompt
+    from codereview_openrouter_mcp.server import _do_multi_model_review
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        return f"Review from {model_id}"
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        result = await _do_multi_model_review("test prompt", get_review_system_prompt)
+
+    # At least one persona label should appear in headers (which personas depend
+    # on which 3 of 4 models complete first — so just assert the format is used).
+    assert "persona" in result.lower()

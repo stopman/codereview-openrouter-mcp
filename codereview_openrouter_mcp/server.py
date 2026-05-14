@@ -1,5 +1,6 @@
 import asyncio
 import time
+from typing import Callable
 
 from mcp.server.fastmcp import Context, FastMCP
 
@@ -23,10 +24,11 @@ from codereview_openrouter_mcp.models import (
     resolve_model,
 )
 from codereview_openrouter_mcp.prompts import (
-    PLAN_REVIEW_SYSTEM_PROMPT,
-    REVIEW_SYSTEM_PROMPT,
     format_plan_review_request,
     format_review_request,
+    get_persona,
+    get_plan_review_system_prompt,
+    get_review_system_prompt,
     sanitize_context,
 )
 from codereview_openrouter_mcp.secrets import redact_secrets
@@ -86,16 +88,19 @@ async def _do_review(content: str, model: str, focus: str, progress: _Progress, 
     prompt = format_review_request(content, focus=focus, context=context)
 
     if model == "all":
-        result = await _do_multi_model_review(prompt, REVIEW_SYSTEM_PROMPT, progress=progress)
+        result = await _do_multi_model_review(prompt, get_review_system_prompt, progress=progress)
         await progress.update("Review complete")
         return result
 
     model_id = resolve_model(model)
     display = MODEL_DISPLAY_NAMES.get(model, model_id)
-    log.info("Sending review request: model=%s, focus=%s, content_len=%d", model_id, focus, len(content))
-    await progress.update(f"Sending to {display} for review...")
+    system_prompt = get_review_system_prompt(model)
+    persona = get_persona(model) or "default"
+    log.info("Sending review request: model=%s, persona=%s, focus=%s, content_len=%d",
+             model_id, persona, focus, len(content))
+    await progress.update(f"Sending to {display} ({persona}) for review...")
     t0 = time.monotonic()
-    result = await get_review(prompt, REVIEW_SYSTEM_PROMPT, model_id)
+    result = await get_review(prompt, system_prompt, model_id)
     elapsed = time.monotonic() - t0
     log.info("Review completed in %.1fs, response_len=%d", elapsed, len(result))
     await progress.update(f"Review complete ({elapsed:.0f}s)")
@@ -103,12 +108,18 @@ async def _do_review(content: str, model: str, focus: str, progress: _Progress, 
 
 
 async def _do_multi_model_review(
-    prompt: str, system_prompt: str,
+    prompt: str,
+    system_prompt_fn: Callable[[str], str],
     use_reasoning: bool = False,
     max_tokens: int | None = None,
     progress: _Progress | None = None,
 ) -> str:
-    """Fan out review to all models in ALL_REVIEW_MODELS concurrently."""
+    """Fan out review to all models in ALL_REVIEW_MODELS concurrently.
+
+    Each model receives the system prompt returned by `system_prompt_fn(model_name)`,
+    so a multi-model panel can mix personas (architect / detail / simplicity /
+    pragmatist) rather than asking every model the same generic question.
+    """
     min_results = min(3, len(ALL_REVIEW_MODELS))
     log.info("Starting multi-model review across %d models (returning after %d): %s",
              len(ALL_REVIEW_MODELS), min_results, ALL_REVIEW_MODELS)
@@ -117,7 +128,7 @@ async def _do_multi_model_review(
     tasks = {
         asyncio.create_task(
             _do_single_review(
-                "", model_name, system_prompt, prompt,
+                "", model_name, system_prompt_fn(model_name), prompt,
                 use_reasoning=use_reasoning,
                 max_tokens=max_tokens,
             )
@@ -141,10 +152,13 @@ async def _do_multi_model_review(
         display_name = MODEL_DISPLAY_NAMES.get(model_name, model_name)
         done_count += 1
 
+        persona = get_persona(model_name)
+        persona_label = f" — {persona} persona" if persona else ""
+
         if review_text.startswith("Error:"):
-            errors.append(f"{display_name}: {review_text}")
+            errors.append(f"{display_name}{persona_label}: {review_text}")
         else:
-            sections.append(f"---\n\n# Review by {display_name}\n\n{review_text}")
+            sections.append(f"---\n\n# Review by {display_name}{persona_label}\n\n{review_text}")
             if progress:
                 await progress.update(
                     f"{display_name} complete ({len(sections)}/{min_results})",
@@ -348,7 +362,7 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str, progress
 
     if model == "all":
         result = await _do_multi_model_review(
-            prompt, PLAN_REVIEW_SYSTEM_PROMPT,
+            prompt, get_plan_review_system_prompt,
             use_reasoning=True, max_tokens=PLAN_MAX_TOKENS, progress=progress,
         )
         await progress.update("Plan review complete")
@@ -357,11 +371,13 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str, progress
     model_id = resolve_model(model)
     display = MODEL_DISPLAY_NAMES.get(model, model_id)
     extra_body = get_reasoning_config(model)
+    system_prompt = get_plan_review_system_prompt(model)
+    persona = get_persona(model) or "default"
 
-    await progress.update(f"Sending plan to {display} for review...")
+    await progress.update(f"Sending plan to {display} ({persona}) for review...")
     t0 = time.monotonic()
     result = await get_review(
-        prompt, PLAN_REVIEW_SYSTEM_PROMPT, model_id,
+        prompt, system_prompt, model_id,
         extra_body=extra_body,
         max_tokens=PLAN_MAX_TOKENS,
     )
