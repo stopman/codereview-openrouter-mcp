@@ -36,7 +36,67 @@ from codereview_openrouter_mcp.secrets import redact_secrets
 
 log = get_logger("server")
 
-mcp = FastMCP("CodeReview")
+SERVER_INSTRUCTIONS = """\
+CodeReview MCP — multi-model code and plan review via OpenRouter.
+
+## When to use this server
+
+- A non-trivial code change is ready for a second opinion (review_diff, review_commit, review_branch, review_file)
+- A technical plan or design needs scrutiny before implementation (review_plan / review_oracle)
+- A focused review is needed on one dimension: security, architecture, edge_cases, style, abstractions (pass `focus=`)
+
+## Picking a model
+
+- `model="all"` (RECOMMENDED for important reviews): runs a 4-model panel with
+  complementary personas — Gemini (architect), GPT-5.3 (detail-oriented),
+  DeepSeek (first-principles / simplicity), Kimi (production/pragmatist).
+  Returns the panel's reviews as markdown; the caller (you) synthesizes.
+- Single model picks: `gemini` (default, fast architect lens), `openai`
+  (detail), `deepseek` (simplicity), `kimi` (production), `claude` (detail,
+  thorough).
+
+## Attaching project documentation — IMPORTANT
+
+Every tool accepts an optional `context_files: list[str]` parameter — paths
+(relative to `repo_path`) to markdown/text docs (architecture briefs,
+READMEs, ADRs, design plans, CLAUDE.md, docs/ folder contents). The
+reviewer models read those docs alongside the code so they can judge the
+change against the project's *stated goals*, not in isolation.
+
+**Be proactive about this.** Before calling any review tool on a meaningful
+change, briefly scan the repo for project-context docs and include the
+relevant ones via `context_files`. Common locations to check:
+
+- `ARCHITECTURE.md`, `ARCH.md`, `DESIGN.md` at repo root
+- `README.md` (if it actually describes architecture, not just install steps)
+- `docs/` — especially `docs/architecture*`, `docs/design*`, `docs/adr/*`,
+  `docs/plan*`, `docs/roadmap*`
+- `CLAUDE.md`, `AGENTS.md`, `.github/PULL_REQUEST_TEMPLATE.md`
+- An in-flight plan doc the user is working from
+
+Pick the docs that are actually relevant to what the change touches —
+don't dump every markdown file. Skip changelogs, license files, install
+guides, and giant logs. Limits are 50 files / 200KB total / 100KB per file;
+oversized, binary, or missing files are skipped with a notice surfaced to
+the reviewer.
+
+## Plan reviews specifically
+
+`review_plan` and `review_oracle` also accept `context_files` (with
+`repo_path`) — use this when reviewing a design against the codebase the
+plan will land in. Pass the architecture doc, the existing module the plan
+modifies, and any in-flight related plans.
+
+## Output
+
+Multi-model reviews return one markdown section per reviewer, headed by
+model + persona (e.g. `# Review by Gemini 3.1 Pro — architect persona`).
+When `model="all"`, expect to synthesize across the panel yourself; do not
+just paste the raw output to the user — surface the strongest agreed-upon
+findings and arbitrate disagreements.
+"""
+
+mcp = FastMCP("CodeReview", instructions=SERVER_INSTRUCTIONS)
 
 PLAN_MAX_TOKENS = 16384
 
@@ -231,10 +291,15 @@ async def _prepare_diff(diff: str) -> str:
         repo_path: Path to the git repository (defaults to current directory)
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
-        context_files: Optional list of paths (relative to repo_path) to
-            additional markdown/text files — architecture docs, READMEs, design
-            plans, ADRs — to include as project context. Helps the reviewer
-            understand the broader goals of the change. Max 50 files, 200K chars total.
+        context_files: Optional but recommended for non-trivial changes —
+            paths (relative to repo_path) to markdown/text docs to attach as
+            project context. Before calling, scan the repo for
+            ARCHITECTURE.md / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md /
+            in-flight plan files and include the ones relevant to what the
+            change touches, so the reviewer can evaluate the change against
+            the project's stated goals instead of in isolation. Skip
+            changelogs, install guides, and large logs. Max 50 files,
+            200K chars total, 100KB per file.
     """
 )
 async def review_diff(
@@ -278,9 +343,15 @@ async def review_diff(
         sha: Commit SHA to review (defaults to HEAD)
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
-        context_files: Optional list of paths (relative to repo_path) to
-            additional markdown/text files — architecture docs, READMEs, design
-            plans, ADRs — to include as project context. Max 50 files, 200K chars total.
+        context_files: Optional but recommended for non-trivial changes —
+            paths (relative to repo_path) to markdown/text docs to attach as
+            project context. Before calling, scan the repo for
+            ARCHITECTURE.md / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md /
+            in-flight plan files and include the ones relevant to what the
+            change touches, so the reviewer can evaluate the change against
+            the project's stated goals instead of in isolation. Skip
+            changelogs, install guides, and large logs. Max 50 files,
+            200K chars total, 100KB per file.
     """
 )
 async def review_commit(
@@ -326,9 +397,15 @@ async def review_commit(
         base: Base branch to compare against (defaults to main)
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
-        context_files: Optional list of paths (relative to repo_path) to
-            additional markdown/text files — architecture docs, READMEs, design
-            plans, ADRs — to include as project context. Max 50 files, 200K chars total.
+        context_files: Optional but recommended for non-trivial changes —
+            paths (relative to repo_path) to markdown/text docs to attach as
+            project context. Before calling, scan the repo for
+            ARCHITECTURE.md / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md /
+            in-flight plan files and include the ones relevant to what the
+            change touches, so the reviewer can evaluate the change against
+            the project's stated goals instead of in isolation. Skip
+            changelogs, install guides, and large logs. Max 50 files,
+            200K chars total, 100KB per file.
     """
 )
 async def review_branch(
@@ -374,9 +451,15 @@ async def review_branch(
         repo_path: Path to the git repository (defaults to current directory)
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
-        context_files: Optional list of paths (relative to repo_path) to
-            additional markdown/text files — architecture docs, READMEs, design
-            plans, ADRs — to include as project context. Max 50 files, 200K chars total.
+        context_files: Optional but recommended for non-trivial changes —
+            paths (relative to repo_path) to markdown/text docs to attach as
+            project context. Before calling, scan the repo for
+            ARCHITECTURE.md / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md /
+            in-flight plan files and include the ones relevant to what the
+            change touches, so the reviewer can evaluate the change against
+            the project's stated goals instead of in isolation. Skip
+            changelogs, install guides, and large logs. Max 50 files,
+            200K chars total, 100KB per file.
     """
 )
 async def review_file(
@@ -471,9 +554,12 @@ async def _do_plan_review(
         codebase_context: Optional relevant code snippets for grounding the review
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         repo_path: Path to the git repository — required only if context_files is set
-        context_files: Optional list of paths (relative to repo_path) to
-            additional markdown/text files — architecture docs, READMEs, ADRs —
-            to include as project context. Max 50 files, 200K chars total.
+        context_files: Optional but recommended for plan reviews — paths
+            (relative to repo_path) to markdown/text docs that ground the
+            plan in the codebase it will land in. Scan for ARCHITECTURE.md
+            / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md / related in-flight
+            plans, and attach the relevant ones. Skip changelogs and
+            install guides. Max 50 files, 200K chars total, 100KB per file.
     """
 )
 async def review_plan(
@@ -518,9 +604,12 @@ async def review_plan(
         codebase_context: Optional relevant code snippets for grounding the review
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         repo_path: Path to the git repository — required only if context_files is set
-        context_files: Optional list of paths (relative to repo_path) to
-            additional markdown/text files — architecture docs, READMEs, ADRs —
-            to include as project context. Max 50 files, 200K chars total.
+        context_files: Optional but recommended for plan reviews — paths
+            (relative to repo_path) to markdown/text docs that ground the
+            plan in the codebase it will land in. Scan for ARCHITECTURE.md
+            / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md / related in-flight
+            plans, and attach the relevant ones. Skip changelogs and
+            install guides. Max 50 files, 200K chars total, 100KB per file.
     """
 )
 async def review_oracle(

@@ -665,6 +665,51 @@ async def test_review_plan_single_model_uses_persona_prompt(mock_ctx):
     assert "Pragmatist" in captured["system_prompt"] or "Production" in captured["system_prompt"]
 
 
+# --- server instructions tests ---
+
+
+def test_server_has_instructions_set():
+    """FastMCP server must publish instructions so MCP clients (Claude Code
+    etc.) see proactive guidance on when/how to use this server."""
+    from codereview_openrouter_mcp.server import mcp
+
+    instructions = mcp.instructions
+    assert instructions, "Server must publish instructions"
+    assert len(instructions) > 200, "Instructions should be substantive"
+
+
+def test_server_instructions_advertise_context_files():
+    """Instructions must tell callers to scan for project docs and attach
+    them via context_files — otherwise the feature is invisible."""
+    from codereview_openrouter_mcp.server import mcp
+
+    text = mcp.instructions.lower()
+    assert "context_files" in text
+    # Mentions concrete doc locations the AI should look for
+    assert "architecture.md" in text or "architecture" in text
+    assert "claude.md" in text or "agents.md" in text
+
+
+def test_server_instructions_explain_model_all():
+    """Instructions should describe what model='all' returns and that the
+    caller is expected to synthesize."""
+    from codereview_openrouter_mcp.server import mcp
+
+    text = mcp.instructions.lower()
+    assert 'model="all"' in text or "model='all'" in text
+    assert "panel" in text
+
+
+def test_server_instructions_explain_personas():
+    """Instructions should name the per-model personas so the caller knows
+    what each model is contributing."""
+    from codereview_openrouter_mcp.server import mcp
+
+    text = mcp.instructions.lower()
+    for persona in ["architect", "detail", "simplicity", "production"]:
+        assert persona in text, f"Persona '{persona}' missing from instructions"
+
+
 # --- context_files / project_docs tests ---
 
 
