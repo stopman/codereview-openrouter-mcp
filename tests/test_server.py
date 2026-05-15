@@ -665,6 +665,172 @@ async def test_review_plan_single_model_uses_persona_prompt(mock_ctx):
     assert "Pragmatist" in captured["system_prompt"] or "Production" in captured["system_prompt"]
 
 
+# --- context_files / project_docs tests ---
+
+
+def test_format_review_request_includes_project_docs():
+    """When project_docs is provided, the rendered prompt must include them
+    ahead of the code so the model has the context first."""
+    from codereview_openrouter_mcp.prompts import format_review_request
+
+    docs = '<project_context><file name="README.md">\nA project README.\n</file></project_context>'
+    result = format_review_request("print('x')", project_docs=docs)
+    assert "Project documentation context" in result
+    assert docs in result
+    # Docs sit before the code under review so the model reads context first
+    assert result.index(docs) < result.index("print('x')")
+
+
+def test_format_plan_review_request_includes_project_docs():
+    from codereview_openrouter_mcp.prompts import format_plan_review_request
+
+    docs = '<project_context><file name="ARCH.md">\nService A → B.\n</file></project_context>'
+    result = format_plan_review_request("Add caching", project_docs=docs)
+    assert docs in result
+    assert result.index(docs) < result.index("Add caching")
+
+
+def test_format_review_request_no_docs_unchanged():
+    """No project_docs → no Project documentation header."""
+    from codereview_openrouter_mcp.prompts import format_review_request
+
+    result = format_review_request("code", project_docs="")
+    assert "Project documentation context" not in result
+
+
+@pytest.mark.asyncio
+async def test_review_diff_injects_context_files_into_prompt(mock_ctx, tmp_path):
+    """End-to-end: context_files content reaches the LLM prompt."""
+    import subprocess
+
+    from codereview_openrouter_mcp.server import review_diff
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "ARCH.md").write_text("ARCHITECTURE_MARKER_42: service A calls B.")
+    (tmp_path / "code.py").write_text("print('x')\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "code.py").write_text("print('y')\n")  # make a working tree change
+
+    captured = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured["content"] = content
+        return "LGTM"
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        await review_diff(
+            repo_path=str(tmp_path),
+            model="gemini",
+            context_files=["ARCH.md"],
+            ctx=mock_ctx,
+        )
+
+    assert "ARCHITECTURE_MARKER_42" in captured["content"]
+    assert "<project_context>" in captured["content"]
+    assert '<file name="ARCH.md">' in captured["content"]
+
+
+@pytest.mark.asyncio
+async def test_review_plan_injects_context_files_into_prompt(mock_ctx, tmp_path):
+    """review_plan must accept context_files when repo_path is supplied."""
+    from codereview_openrouter_mcp.server import review_plan
+
+    (tmp_path / "VISION.md").write_text("VISION_MARKER_99: build a cache.")
+
+    captured = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured["content"] = content
+        return "Proceed."
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        await review_plan(
+            plan="Add an LRU cache to the user service",
+            model="gemini",
+            repo_path=str(tmp_path),
+            context_files=["VISION.md"],
+            ctx=mock_ctx,
+        )
+
+    assert "VISION_MARKER_99" in captured["content"]
+    assert '<file name="VISION.md">' in captured["content"]
+
+
+@pytest.mark.asyncio
+async def test_review_diff_redacts_secrets_in_context_files(mock_ctx, tmp_path):
+    """Secrets in a context file must be redacted before being sent to the LLM."""
+    import subprocess
+
+    from codereview_openrouter_mcp.server import review_diff
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True)
+    fake_aws_key = "AKIAIOSFODNN7EXAMPLE"
+    (tmp_path / "DEPLOY.md").write_text(f"Deploy with key {fake_aws_key}")
+    (tmp_path / "code.py").write_text("print('x')\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "code.py").write_text("print('y')\n")
+
+    captured = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured["content"] = content
+        return "LGTM"
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        await review_diff(
+            repo_path=str(tmp_path),
+            model="gemini",
+            context_files=["DEPLOY.md"],
+            ctx=mock_ctx,
+        )
+
+    assert fake_aws_key not in captured["content"], "AWS key leaked from context file to LLM"
+
+
+@pytest.mark.asyncio
+async def test_review_diff_missing_context_file_surfaces_notice(mock_ctx, tmp_path):
+    """A requested but missing context file must not silently disappear —
+    a notice should reach the LLM so it knows context is incomplete."""
+    import subprocess
+
+    from codereview_openrouter_mcp.server import review_diff
+
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "t@t"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.name", "T"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "code.py").write_text("print('x')\n")
+    subprocess.run(["git", "add", "."], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "commit", "-m", "init"], cwd=tmp_path, check=True, capture_output=True)
+    (tmp_path / "code.py").write_text("print('y')\n")
+
+    captured = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured["content"] = content
+        return "LGTM"
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        await review_diff(
+            repo_path=str(tmp_path),
+            model="gemini",
+            context_files=["ARCH_THAT_DOESNT_EXIST.md"],
+            ctx=mock_ctx,
+        )
+
+    assert "<context_notice>" in captured["content"]
+    assert "ARCH_THAT_DOESNT_EXIST.md" in captured["content"]
+    assert "not found" in captured["content"]
+
+
+# --- end context_files tests ---
+
+
 def test_claude_mapped_to_detail_persona():
     """Single-model claude uses the detail-oriented persona prompt."""
     from codereview_openrouter_mcp.prompts import PERSONA_DETAIL, PERSONA_MAP

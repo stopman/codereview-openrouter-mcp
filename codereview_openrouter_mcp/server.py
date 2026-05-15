@@ -13,6 +13,7 @@ from codereview_openrouter_mcp.git_ops import (
     get_commit_diff,
     get_file_content,
     get_working_diff,
+    read_context_files,
     truncate_diff,
     validate_repo,
 )
@@ -78,14 +79,36 @@ async def _do_single_review(
         return model_name, f"Error: Review with {model_name} failed — {e}"
 
 
-async def _do_review(content: str, model: str, focus: str, progress: _Progress, context: str = "") -> str:
+async def _load_project_docs(
+    repo_path: str,
+    context_files: list[str] | None,
+) -> str:
+    """Read optional context files and redact any secrets before returning."""
+    if not context_files:
+        return ""
+    docs_text, skipped = await read_context_files(repo_path, context_files)
+    if skipped:
+        log.info("Context files skipped: %s", skipped)
+    if not docs_text:
+        return ""
+    docs_text, doc_findings = await asyncio.to_thread(redact_secrets, docs_text)
+    if doc_findings:
+        log.warning("Redacted %d potential secret(s) from context files", len(doc_findings))
+    return docs_text
+
+
+async def _do_review(
+    content: str, model: str, focus: str, progress: _Progress,
+    context: str = "",
+    project_docs: str = "",
+) -> str:
     model = model or settings.default_model
     content, findings = await asyncio.to_thread(redact_secrets, content)
     if findings:
         log.warning("Redacted %d potential secret(s) before sending to LLM", len(findings))
         warning = "\n".join(f"  - {f['type']} (line {f['line_number']})" for f in findings)
         context += f"\n\n⚠️ NOTICE: {len(findings)} potential secret(s) were redacted before sending:\n{warning}"
-    prompt = format_review_request(content, focus=focus, context=context)
+    prompt = format_review_request(content, focus=focus, context=context, project_docs=project_docs)
 
     if model == "all":
         result = await _do_multi_model_review(prompt, get_review_system_prompt, progress=progress)
@@ -208,15 +231,21 @@ async def _prepare_diff(diff: str) -> str:
         repo_path: Path to the git repository (defaults to current directory)
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
+        context_files: Optional list of paths (relative to repo_path) to
+            additional markdown/text files — architecture docs, READMEs, design
+            plans, ADRs — to include as project context. Helps the reviewer
+            understand the broader goals of the change. Max 50 files, 200K chars total.
     """
 )
 async def review_diff(
     repo_path: str = ".",
     model: str = "gemini",
     focus: str = "all",
+    context_files: list[str] | None = None,
     ctx: Context | None = None,
 ) -> str:
-    log.info("review_diff called: repo_path=%s, model=%s, focus=%s", repo_path, model, focus)
+    log.info("review_diff called: repo_path=%s, model=%s, focus=%s, context_files=%s",
+             repo_path, model, focus, context_files)
     min_results = min(3, len(ALL_REVIEW_MODELS))
     total = 2 + (min_results + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
@@ -230,7 +259,12 @@ async def review_diff(
             return "No working tree changes found. Nothing to review."
         await progress.update("Preparing diff...")
         diff = await _prepare_diff(diff)
-        return await _do_review(diff, model, focus, progress, context="Working tree diff (staged + unstaged changes)")
+        project_docs = await _load_project_docs(repo_path, context_files)
+        return await _do_review(
+            diff, model, focus, progress,
+            context="Working tree diff (staged + unstaged changes)",
+            project_docs=project_docs,
+        )
     except (GitError, ValueError) as e:
         log.error("review_diff failed: %s", e)
         return f"Error: {e}"
@@ -244,6 +278,9 @@ async def review_diff(
         sha: Commit SHA to review (defaults to HEAD)
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
+        context_files: Optional list of paths (relative to repo_path) to
+            additional markdown/text files — architecture docs, READMEs, design
+            plans, ADRs — to include as project context. Max 50 files, 200K chars total.
     """
 )
 async def review_commit(
@@ -251,9 +288,11 @@ async def review_commit(
     sha: str = "HEAD",
     model: str = "gemini",
     focus: str = "all",
+    context_files: list[str] | None = None,
     ctx: Context | None = None,
 ) -> str:
-    log.info("review_commit called: repo_path=%s, sha=%s, model=%s, focus=%s", repo_path, sha, model, focus)
+    log.info("review_commit called: repo_path=%s, sha=%s, model=%s, focus=%s, context_files=%s",
+             repo_path, sha, model, focus, context_files)
     min_results = min(3, len(ALL_REVIEW_MODELS))
     total = 2 + (min_results + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
@@ -267,7 +306,12 @@ async def review_commit(
             return f"No changes found in commit {sha}."
         await progress.update("Preparing diff...")
         diff = await _prepare_diff(diff)
-        return await _do_review(diff, model, focus, progress, context=f"Commit {sanitize_context(sha)}")
+        project_docs = await _load_project_docs(repo_path, context_files)
+        return await _do_review(
+            diff, model, focus, progress,
+            context=f"Commit {sanitize_context(sha)}",
+            project_docs=project_docs,
+        )
     except (GitError, ValueError) as e:
         log.error("review_commit failed: %s", e)
         return f"Error: {e}"
@@ -282,6 +326,9 @@ async def review_commit(
         base: Base branch to compare against (defaults to main)
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
+        context_files: Optional list of paths (relative to repo_path) to
+            additional markdown/text files — architecture docs, READMEs, design
+            plans, ADRs — to include as project context. Max 50 files, 200K chars total.
     """
 )
 async def review_branch(
@@ -290,9 +337,11 @@ async def review_branch(
     base: str = "main",
     model: str = "gemini",
     focus: str = "all",
+    context_files: list[str] | None = None,
     ctx: Context | None = None,
 ) -> str:
-    log.info("review_branch called: branch=%s, base=%s, repo_path=%s, model=%s, focus=%s", branch, base, repo_path, model, focus)
+    log.info("review_branch called: branch=%s, base=%s, repo_path=%s, model=%s, focus=%s, context_files=%s",
+             branch, base, repo_path, model, focus, context_files)
     min_results = min(3, len(ALL_REVIEW_MODELS))
     total = 2 + (min_results + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
@@ -306,7 +355,12 @@ async def review_branch(
             return f"No changes found between {base} and {branch}."
         await progress.update("Preparing diff...")
         diff = await _prepare_diff(diff)
-        return await _do_review(diff, model, focus, progress, context=f"Branch {sanitize_context(branch)} vs {sanitize_context(base)}")
+        project_docs = await _load_project_docs(repo_path, context_files)
+        return await _do_review(
+            diff, model, focus, progress,
+            context=f"Branch {sanitize_context(branch)} vs {sanitize_context(base)}",
+            project_docs=project_docs,
+        )
     except (GitError, ValueError) as e:
         log.error("review_branch failed: %s", e)
         return f"Error: {e}"
@@ -320,6 +374,9 @@ async def review_branch(
         repo_path: Path to the git repository (defaults to current directory)
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
+        context_files: Optional list of paths (relative to repo_path) to
+            additional markdown/text files — architecture docs, READMEs, design
+            plans, ADRs — to include as project context. Max 50 files, 200K chars total.
     """
 )
 async def review_file(
@@ -327,9 +384,11 @@ async def review_file(
     repo_path: str = ".",
     model: str = "gemini",
     focus: str = "all",
+    context_files: list[str] | None = None,
     ctx: Context | None = None,
 ) -> str:
-    log.info("review_file called: file_path=%s, repo_path=%s, model=%s, focus=%s", file_path, repo_path, model, focus)
+    log.info("review_file called: file_path=%s, repo_path=%s, model=%s, focus=%s, context_files=%s",
+             file_path, repo_path, model, focus, context_files)
     min_results = min(3, len(ALL_REVIEW_MODELS))
     total = 2 + (min_results + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
@@ -343,13 +402,21 @@ async def review_file(
             return f"File '{file_path}' is empty. Nothing to review."
         await progress.update("Reading file...")
         content = truncate_diff(content, settings.max_diff_chars)
-        return await _do_review(content, model, focus, progress, context=f"Full file review: {sanitize_context(file_path)}")
+        project_docs = await _load_project_docs(repo_path, context_files)
+        return await _do_review(
+            content, model, focus, progress,
+            context=f"Full file review: {sanitize_context(file_path)}",
+            project_docs=project_docs,
+        )
     except (GitError, ValueError) as e:
         log.error("review_file failed: %s", e)
         return f"Error: {e}"
 
 
-async def _do_plan_review(plan: str, codebase_context: str, model: str, progress: _Progress) -> str:
+async def _do_plan_review(
+    plan: str, codebase_context: str, model: str, progress: _Progress,
+    project_docs: str = "",
+) -> str:
     """Shared logic for review_plan and review_oracle."""
     model = model or settings.default_model
 
@@ -362,7 +429,7 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str, progress
     if all_findings:
         log.warning("Redacted %d potential secret(s) from plan review input", len(all_findings))
 
-    prompt = format_plan_review_request(plan, codebase_context)
+    prompt = format_plan_review_request(plan, codebase_context, project_docs=project_docs)
 
     if model == "all":
         result = await _do_multi_model_review(
@@ -403,22 +470,33 @@ async def _do_plan_review(plan: str, codebase_context: str, model: str, progress
         plan: The plan or design document text to review
         codebase_context: Optional relevant code snippets for grounding the review
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+        repo_path: Path to the git repository — required only if context_files is set
+        context_files: Optional list of paths (relative to repo_path) to
+            additional markdown/text files — architecture docs, READMEs, ADRs —
+            to include as project context. Max 50 files, 200K chars total.
     """
 )
 async def review_plan(
     plan: str,
     codebase_context: str = "",
     model: str = "gemini",
+    repo_path: str = ".",
+    context_files: list[str] | None = None,
     ctx: Context | None = None,
 ) -> str:
-    log.info("review_plan called: model=%s, plan_len=%d", model, len(plan))
+    log.info("review_plan called: model=%s, plan_len=%d, context_files=%s",
+             model, len(plan), context_files)
     min_results = min(3, len(ALL_REVIEW_MODELS))
     total = 1 + (min_results + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Preparing plan review...")
-        return await _do_plan_review(plan, codebase_context, model, progress)
-    except ValueError as e:
+        project_docs = await _load_project_docs(repo_path, context_files)
+        return await _do_plan_review(
+            plan, codebase_context, model, progress,
+            project_docs=project_docs,
+        )
+    except (GitError, ValueError) as e:
         log.error("review_plan failed: %s", e)
         return f"Error: {e}"
 
@@ -439,22 +517,33 @@ async def review_plan(
         plan: The plan, design document, or reasoning task to review
         codebase_context: Optional relevant code snippets for grounding the review
         model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+        repo_path: Path to the git repository — required only if context_files is set
+        context_files: Optional list of paths (relative to repo_path) to
+            additional markdown/text files — architecture docs, READMEs, ADRs —
+            to include as project context. Max 50 files, 200K chars total.
     """
 )
 async def review_oracle(
     plan: str,
     codebase_context: str = "",
     model: str = "gemini",
+    repo_path: str = ".",
+    context_files: list[str] | None = None,
     ctx: Context | None = None,
 ) -> str:
-    log.info("review_oracle called: model=%s, plan_len=%d", model, len(plan))
+    log.info("review_oracle called: model=%s, plan_len=%d, context_files=%s",
+             model, len(plan), context_files)
     min_results = min(3, len(ALL_REVIEW_MODELS))
     total = 1 + (min_results + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Preparing plan review...")
-        return await _do_plan_review(plan, codebase_context, model, progress)
-    except ValueError as e:
+        project_docs = await _load_project_docs(repo_path, context_files)
+        return await _do_plan_review(
+            plan, codebase_context, model, progress,
+            project_docs=project_docs,
+        )
+    except (GitError, ValueError) as e:
         log.error("review_oracle failed: %s", e)
         return f"Error: {e}"
 

@@ -103,16 +103,30 @@ Once the MCP server is configured, just ask Claude Code in natural language. Her
 
 > "Architecture-focused review of the feature/payments branch"
 
+#### Attaching project docs for context
+
+Every review tool accepts an optional `context_files` parameter — a list of paths (relative to the repo) to markdown/text files that describe the project. The reviewer models will read those docs alongside the code, so they can evaluate the change against the project's stated goals, architecture, or current plan.
+
+> "Review my diff with all models, and include ARCHITECTURE.md and docs/plan-q2.md as context"
+
+> "Review the feature/payments branch — make sure it aligns with docs/payments-design.md"
+
+> "Review my caching plan against README.md and docs/perf-budget.md"
+
+Limits: up to 50 files, 200KB total across all context files, 100KB per file. Binary content and path-traversal attempts are skipped with a notice surfaced to the reviewer model. Secrets in context files go through the same redaction pipeline as the code itself.
+
 Claude Code will map these natural-language requests to the appropriate MCP tool calls automatically — you don't need to know the tool names or parameter syntax.
 
 ## Tools
+
+All review tools accept an optional `context_files: list[str]` parameter — paths (relative to `repo_path`) to additional markdown/text docs (architecture briefs, READMEs, ADRs, design plans) to include as project context.
 
 ### `review_diff` — Review working tree changes
 
 Reviews your current staged + unstaged changes (what you'd see in `git diff HEAD`).
 
 ```
-review_diff(repo_path=".", model="gemini", focus="all")
+review_diff(repo_path=".", model="gemini", focus="all", context_files=["ARCHITECTURE.md"])
 ```
 
 **Example prompt:** *"Review my current changes before I commit"*
@@ -122,7 +136,7 @@ review_diff(repo_path=".", model="gemini", focus="all")
 Reviews any commit by SHA.
 
 ```
-review_commit(repo_path=".", sha="HEAD", model="openai", focus="security")
+review_commit(repo_path=".", sha="HEAD", model="openai", focus="security", context_files=["docs/threat-model.md"])
 ```
 
 **Example prompt:** *"Review the last commit using OpenAI, focus on security"*
@@ -132,7 +146,7 @@ review_commit(repo_path=".", sha="HEAD", model="openai", focus="security")
 Reviews all changes on a branch compared to a base branch.
 
 ```
-review_branch(branch="feature/auth", repo_path=".", base="main", model="claude")
+review_branch(branch="feature/auth", repo_path=".", base="main", model="claude", context_files=["docs/auth-design.md"])
 ```
 
 **Example prompt:** *"Review the feature/auth branch against main using Claude"*
@@ -142,7 +156,7 @@ review_branch(branch="feature/auth", repo_path=".", base="main", model="claude")
 Full-file review for when you want a complete assessment.
 
 ```
-review_file(file_path="src/auth.py", repo_path=".", model="claude", focus="architecture")
+review_file(file_path="src/auth.py", repo_path=".", model="claude", focus="architecture", context_files=["README.md", "ARCHITECTURE.md"])
 ```
 
 **Example prompt:** *"Review src/auth.py with Claude, focus on architecture"*
@@ -152,7 +166,7 @@ review_file(file_path="src/auth.py", repo_path=".", model="claude", focus="archi
 Evaluates a plan for first-principles thinking, simplicity (KISS), security risks, edge cases, and architecture quality. Uses maximum reasoning effort for the deepest analysis.
 
 ```
-review_plan(plan="We plan to...", codebase_context="", model="gemini")
+review_plan(plan="We plan to...", codebase_context="", model="gemini", repo_path=".", context_files=["docs/roadmap.md"])
 ```
 
 **Example prompt:** *"Review my plan for the database migration"*
