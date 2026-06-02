@@ -339,7 +339,7 @@ async def test_multi_model_review_partial_failure():
         result = await _do_multi_model_review("test prompt", _fixed_prompt_fn("system prompt"))
 
     # Should still have results from the other models
-    assert "Gemini 3.1 Pro" in result
+    assert "Gemini 3.5 Flash" in result
     assert "GPT-5.3 Codex" in result
     assert "Kimi K2.6" in result
     # Should note the failure
@@ -480,7 +480,7 @@ async def test_review_plan_all_uses_multi_model(mock_ctx):
         result = await review_plan(plan="Add auth", model="all", ctx=mock_ctx)
 
     assert len(call_models) == 4
-    assert "Gemini 3.1 Pro" in result
+    assert "Gemini 3.5 Flash" in result
     assert "GPT-5.3 Codex" in result
 
 

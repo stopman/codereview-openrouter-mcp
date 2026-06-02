@@ -1,7 +1,7 @@
 MODELS: dict[str, str] = {
-    "gemini": "google/gemini-3.1-pro-preview",
+    "gemini": "google/gemini-3.5-flash",
     "openai": "openai/gpt-5.3-codex",
-    "claude": "anthropic/claude-opus-4.7",
+    "claude": "anthropic/claude-opus-4.8",
     "deepseek": "deepseek/deepseek-v4-pro",
     "kimi": "moonshotai/kimi-k2.6",
 }
@@ -13,9 +13,9 @@ ALL_REVIEW_MODELS = ["gemini", "openai", "deepseek", "kimi"]
 
 # Display names for multi-model output headers
 MODEL_DISPLAY_NAMES: dict[str, str] = {
-    "gemini": "Gemini 3.1 Pro",
+    "gemini": "Gemini 3.5 Flash",
     "openai": "GPT-5.3 Codex",
-    "claude": "Claude Opus 4.7",
+    "claude": "Claude Opus 4.8",
     "deepseek": "DeepSeek V4 Pro",
     "kimi": "Kimi K2.6",
 }
@@ -24,8 +24,9 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
 # OpenRouter normalizes the `reasoning` param across providers, but each
 # provider has different capabilities:
 #   - OpenAI/Codex: supports effort levels (xhigh/high/medium/low)
-#   - Anthropic/Claude 4.6: uses verbosity="max" + reasoning.effort="xhigh"
-#   - Gemini 3: xhigh maps down to "high" (Google's max thinkingLevel)
+#   - Anthropic/Claude 4.8: uses verbosity="max" + reasoning.effort="xhigh"
+#   - Gemini 3: xhigh maps down to "high" (Google's max thinkingLevel);
+#     gemini-3.5-flash is a Gemini-3-gen model and supports thinkingLevel
 #   - DeepSeek: reasoning.enabled boolean toggle
 #   - Kimi K2.6: native reasoning model, enabled by default
 REASONING_CONFIG: dict[str, dict] = {

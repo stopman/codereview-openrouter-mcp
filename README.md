@@ -2,7 +2,7 @@
 
 An MCP server that gives your AI coding assistant access to **staff/principal-engineer-level code review** from the world's best LLMs — all through a single OpenRouter API key.
 
-Pick your reviewer per-request: **Gemini 3.1 Pro**, **GPT-5.3 Codex**, **Claude Opus 4.7**, **DeepSeek V4 Pro**, or **Kimi K2.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
+Pick your reviewer per-request: **Gemini 3.5 Flash**, **GPT-5.3 Codex**, **Claude Opus 4.8**, **DeepSeek V4 Pro**, or **Kimi K2.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
 
 ## Why this exists
 
@@ -183,9 +183,9 @@ review_oracle(plan="We plan to...", codebase_context="", model="gemini")
 
 | Name | Model | Best for |
 |---|---|---|
-| `gemini` | Google Gemini 3.1 Pro | Large diffs, fast turnaround |
+| `gemini` | Google Gemini 3.5 Flash | Large diffs, fast turnaround |
 | `openai` | OpenAI GPT-5.3 Codex | Deep code understanding |
-| `claude` | Anthropic Claude Opus 4.7 | Nuanced architectural feedback |
+| `claude` | Anthropic Claude Opus 4.8 | Nuanced architectural feedback |
 | `deepseek` | DeepSeek V4 Pro | Cost-effective deep reasoning |
 | `kimi` | Kimi K2.6 | Long-horizon coding, multimodal |
 | `all` | All of the above (parallel) | Multi-perspective review |
@@ -278,6 +278,7 @@ This catches AWS keys, GitHub tokens, passwords, private keys, connection string
 | `MAX_DIFF_CHARS` | No | `500000` | Max characters before truncation |
 | `LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `ALLOWED_REPO_ROOTS` | No | — | Comma-separated list of allowed repository root paths. If unset, all repos are accessible |
+| `OPENROUTER_ZDR` | No | `true` | Route only to Zero-Data-Retention provider endpoints. Set `false` if a model has no ZDR endpoint and routing fails. `data_collection: "deny"` (no training on your data) is always enforced regardless |
 
 ## Development
 

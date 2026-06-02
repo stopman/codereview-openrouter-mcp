@@ -29,6 +29,15 @@ class Settings:
         self.default_model: str = os.getenv("DEFAULT_MODEL", "gemini")
         self.max_diff_chars: int = _safe_positive_int(os.getenv("MAX_DIFF_CHARS"), 500000)
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
+        # Privacy: only route to Zero-Data-Retention provider endpoints.
+        # Default on. Disable (OPENROUTER_ZDR=false) if a model has no ZDR
+        # endpoint and you hit hard routing failures. data_collection="deny"
+        # is always sent regardless, so providers never train on our data.
+        self.require_zdr: bool = os.getenv("OPENROUTER_ZDR", "true").strip().lower() not in (
+            "false",
+            "0",
+            "no",
+        )
         self.allowed_repo_roots: list[str] = [
             p.strip() for p in os.getenv("ALLOWED_REPO_ROOTS", "").split(",") if p.strip()
         ]

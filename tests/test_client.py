@@ -7,9 +7,9 @@ from codereview_openrouter_mcp.models import MODELS, resolve_model
 
 
 def test_resolve_known_models():
-    assert resolve_model("gemini") == "google/gemini-3.1-pro-preview"
+    assert resolve_model("gemini") == "google/gemini-3.5-flash"
     assert resolve_model("openai") == "openai/gpt-5.3-codex"
-    assert resolve_model("claude") == "anthropic/claude-opus-4.7"
+    assert resolve_model("claude") == "anthropic/claude-opus-4.8"
 
 
 def test_resolve_unknown_model():
@@ -48,6 +48,62 @@ async def test_client_error_does_not_leak_api_details():
 
     assert sensitive_detail not in result, f"Sensitive detail leaked in error: {result}"
     assert "Error" in result
+
+
+# --- Data-privacy provider routing tests ---
+
+
+async def _capture_create_kwargs(extra_body=None):
+    """Run get_review against a mock and return the kwargs sent to OpenRouter."""
+    from codereview_openrouter_mcp.client import get_review
+
+    mock_client = AsyncMock()
+    mock_client.chat.completions.create = AsyncMock(return_value=_make_success_response())
+    with patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client):
+        await get_review("code", "system", "google/gemini-3.5-flash", extra_body=extra_body)
+    return mock_client.chat.completions.create.call_args.kwargs
+
+
+@pytest.mark.asyncio
+async def test_privacy_provider_always_injected():
+    """Every request must deny data collection (no provider training on our data)."""
+    kwargs = await _capture_create_kwargs(extra_body=None)
+    provider = kwargs["extra_body"]["provider"]
+    assert provider["data_collection"] == "deny"
+    assert provider["zdr"] is True  # default OPENROUTER_ZDR=true
+
+
+@pytest.mark.asyncio
+async def test_privacy_provider_does_not_clobber_reasoning():
+    """Merging the provider block must preserve caller reasoning/verbosity config."""
+    extra = {"reasoning": {"effort": "xhigh"}, "verbosity": "max"}
+    kwargs = await _capture_create_kwargs(extra_body=extra)
+    body = kwargs["extra_body"]
+    assert body["reasoning"]["effort"] == "xhigh"
+    assert body["verbosity"] == "max"
+    assert body["provider"]["data_collection"] == "deny"
+
+
+@pytest.mark.asyncio
+async def test_privacy_provider_merges_existing_provider_subkeys():
+    """An existing provider sub-dict must be merged, not overwritten (CRITICAL)."""
+    extra = {"provider": {"order": ["anthropic"]}}
+    kwargs = await _capture_create_kwargs(extra_body=extra)
+    provider = kwargs["extra_body"]["provider"]
+    assert provider["order"] == ["anthropic"]  # caller key preserved
+    assert provider["data_collection"] == "deny"  # privacy key still applied
+
+
+@pytest.mark.asyncio
+async def test_zdr_can_be_disabled_via_settings():
+    """OPENROUTER_ZDR=false drops zdr but keeps data_collection=deny."""
+    from codereview_openrouter_mcp import client as client_mod
+
+    with patch.object(client_mod.settings, "require_zdr", False):
+        kwargs = await _capture_create_kwargs(extra_body=None)
+    provider = kwargs["extra_body"]["provider"]
+    assert "zdr" not in provider
+    assert provider["data_collection"] == "deny"
 
 
 # --- Retry tests ---

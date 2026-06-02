@@ -18,6 +18,32 @@ REQUEST_TIMEOUT = 60.0  # per-request timeout in seconds
 RETRYABLE_STATUS_CODES = {429, 502, 503, 504}
 
 
+def _privacy_provider() -> dict:
+    """OpenRouter provider-routing block enforcing no data retention.
+
+    `data_collection: "deny"` ensures providers never collect/train on our
+    code or plan text. `zdr: true` (when enabled) further restricts routing
+    to Zero-Data-Retention endpoints that store nothing at all.
+    """
+    provider: dict = {"data_collection": "deny"}
+    if settings.require_zdr:
+        provider["zdr"] = True
+    return provider
+
+
+def _merge_extra_body(extra_body: dict | None) -> dict:
+    """Inject the privacy provider block without clobbering caller config.
+
+    Deep-merges into any existing `provider` sub-dict so reasoning/verbosity
+    settings and any future provider preferences are preserved.
+    """
+    merged = dict(extra_body) if extra_body else {}
+    provider = dict(merged.get("provider") or {})
+    provider.update(_privacy_provider())
+    merged["provider"] = provider
+    return merged
+
+
 def _get_client() -> AsyncOpenAI:
     global _client
     if _client is None:
@@ -65,8 +91,7 @@ async def get_review(
             }
             if max_tokens is not None:
                 kwargs["max_tokens"] = max_tokens
-            if extra_body:
-                kwargs["extra_body"] = extra_body
+            kwargs["extra_body"] = _merge_extra_body(extra_body)
             log.info(
                 "OpenRouter request: model=%s, temperature=%s, max_tokens=%s, "
                 "extra_body=%s, prompt_len=%d, system_prompt_len=%d",
