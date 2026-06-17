@@ -619,6 +619,8 @@ PERSONA_MAP: dict[str, str] = {
     "claude": PERSONA_DETAIL,
     "deepseek": PERSONA_SIMPLICITY,
     "kimi": PERSONA_PRAGMATIST,
+    "glm": PERSONA_PRAGMATIST,
+    "fusion": PERSONA_PRAGMATIST,
 }
 
 _REVIEW_PROMPTS_BY_PERSONA: dict[str, str] = {

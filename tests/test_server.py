@@ -2,14 +2,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-
-@pytest.fixture
-def mock_ctx():
-    """A mock MCP Context with async report_progress."""
-    ctx = MagicMock()
-    ctx.report_progress = AsyncMock()
-    return ctx
-
 from codereview_openrouter_mcp.prompts import (
     FOCUS_PROMPTS,
     PLAN_REVIEW_SYSTEM_PROMPT,
@@ -19,6 +11,14 @@ from codereview_openrouter_mcp.prompts import (
     format_review_request,
     validate_focus,
 )
+
+
+@pytest.fixture
+def mock_ctx():
+    """A mock MCP Context with async report_progress."""
+    ctx = MagicMock()
+    ctx.report_progress = AsyncMock()
+    return ctx
 
 
 def test_system_prompt_covers_all_dimensions():
@@ -219,6 +219,18 @@ def test_resolve_model_kimi():
     assert resolve_model("kimi") == "moonshotai/kimi-k2.6"
 
 
+def test_resolve_model_glm():
+    from codereview_openrouter_mcp.models import resolve_model
+
+    assert resolve_model("glm") == "z-ai/glm-5.2"
+
+
+def test_resolve_model_fusion():
+    from codereview_openrouter_mcp.models import resolve_model
+
+    assert resolve_model("fusion") == "openrouter/fusion"
+
+
 def test_resolve_model_invalid():
     from codereview_openrouter_mcp.models import resolve_model
 
@@ -297,6 +309,28 @@ def test_reasoning_config_kimi_uses_enabled():
     assert config["reasoning"]["enabled"] is True
 
 
+def test_reasoning_config_glm_uses_enabled():
+    from codereview_openrouter_mcp.models import get_reasoning_config
+
+    config = get_reasoning_config("glm")
+    assert config["reasoning"]["enabled"] is True
+
+
+def test_reasoning_config_fusion_uses_enabled():
+    from codereview_openrouter_mcp.models import get_reasoning_config
+
+    config = get_reasoning_config("fusion")
+    assert config["reasoning"]["enabled"] is True
+
+
+def test_model_extra_body_fusion_uses_general_budget_preset():
+    from codereview_openrouter_mcp.models import get_model_extra_body
+
+    extra = get_model_extra_body("fusion")
+    assert extra["plugins"][0]["id"] == "fusion"
+    assert extra["plugins"][0]["preset"] == "general-budget"
+
+
 # --- Multi-model review tests ---
 
 
@@ -341,7 +375,7 @@ async def test_multi_model_review_partial_failure():
     # Should still have results from the other models
     assert "Gemini 3.5 Flash" in result
     assert "GPT-5.3 Codex" in result
-    assert "Kimi K2.6" in result
+    assert "Fusion (Budget)" in result
     # Should note the failure
     assert "failed" in result.lower() or "error" in result.lower()
 
@@ -543,7 +577,7 @@ def test_persona_map_assigns_expected_personas():
     assert PERSONA_MAP["gemini"] == PERSONA_ARCHITECT
     assert PERSONA_MAP["openai"] == PERSONA_DETAIL
     assert PERSONA_MAP["deepseek"] == PERSONA_SIMPLICITY
-    assert PERSONA_MAP["kimi"] == PERSONA_PRAGMATIST
+    assert PERSONA_MAP["fusion"] == PERSONA_PRAGMATIST
 
 
 def test_get_review_system_prompt_returns_persona_specific():
@@ -553,7 +587,7 @@ def test_get_review_system_prompt_returns_persona_specific():
     architect = get_review_system_prompt("gemini")
     detail = get_review_system_prompt("openai")
     simplicity = get_review_system_prompt("deepseek")
-    pragmatist = get_review_system_prompt("kimi")
+    pragmatist = get_review_system_prompt("fusion")
 
     # Each should be distinct
     assert len({architect, detail, simplicity, pragmatist}) == 4
@@ -579,7 +613,7 @@ def test_get_plan_review_system_prompt_returns_persona_specific():
     architect = get_plan_review_system_prompt("gemini")
     detail = get_plan_review_system_prompt("openai")
     simplicity = get_plan_review_system_prompt("deepseek")
-    pragmatist = get_plan_review_system_prompt("kimi")
+    pragmatist = get_plan_review_system_prompt("fusion")
 
     assert len({architect, detail, simplicity, pragmatist}) == 4
     assert "Architect" in architect
@@ -631,6 +665,7 @@ async def test_review_diff_single_model_uses_persona_prompt(mock_ctx):
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
         captured["system_prompt"] = system_prompt
+        captured["extra_body"] = extra_body
         captured["model_id"] = model_id
         return "LGTM"
 
@@ -656,13 +691,40 @@ async def test_review_plan_single_model_uses_persona_prompt(mock_ctx):
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
         captured["system_prompt"] = system_prompt
+        captured["extra_body"] = extra_body
         return "LGTM"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
-        await review_plan(plan="Add caching layer", model="kimi", ctx=mock_ctx)
+        await review_plan(plan="Add caching layer", model="fusion", ctx=mock_ctx)
 
-    assert captured["system_prompt"] == get_plan_review_system_prompt("kimi")
+    assert captured["system_prompt"] == get_plan_review_system_prompt("fusion")
+    assert captured["extra_body"]["plugins"][0]["id"] == "fusion"
+    assert captured["extra_body"]["plugins"][0]["preset"] == "general-budget"
+    assert captured["extra_body"]["reasoning"]["enabled"] is True
     assert "Pragmatist" in captured["system_prompt"] or "Production" in captured["system_prompt"]
+
+
+@pytest.mark.asyncio
+async def test_review_diff_fusion_sends_budget_preset(mock_ctx):
+    from codereview_openrouter_mcp.server import review_diff
+
+    captured = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured["model_id"] = model_id
+        captured["extra_body"] = extra_body
+        return "LGTM"
+
+    with (
+        patch("codereview_openrouter_mcp.server.validate_repo", new_callable=AsyncMock, return_value=True),
+        patch("codereview_openrouter_mcp.server.get_working_diff", new_callable=AsyncMock, return_value="diff --git a/f.py\n+x"),
+        patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review),
+    ):
+        await review_diff(repo_path=".", model="fusion", ctx=mock_ctx)
+
+    assert captured["model_id"] == "openrouter/fusion"
+    assert captured["extra_body"]["plugins"][0]["id"] == "fusion"
+    assert captured["extra_body"]["plugins"][0]["preset"] == "general-budget"
 
 
 # --- server instructions tests ---

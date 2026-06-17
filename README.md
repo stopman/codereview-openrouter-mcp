@@ -2,7 +2,7 @@
 
 An MCP server that gives your AI coding assistant access to **staff/principal-engineer-level code review** from the world's best LLMs — all through a single OpenRouter API key.
 
-Pick your reviewer per-request: **Gemini 3.5 Flash**, **GPT-5.3 Codex**, **Claude Opus 4.8**, **DeepSeek V4 Pro**, or **Kimi K2.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
+Pick your reviewer per-request: **Gemini 3.5 Flash**, **GPT-5.3 Codex**, **Claude Opus 4.8**, **DeepSeek V4 Pro**, **Fusion (Budget)**, **GLM-5.2**, or **Kimi K2.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
 
 ## Why this exists
 
@@ -11,7 +11,7 @@ Your AI coding assistant writes code. But who reviews it?
 Other code review MCP servers lock you into one model, require multiple API keys, or don't actually do LLM-powered review at all. This one:
 
 - **One API key** (OpenRouter) gives you access to every major model
-- **You pick the reviewer** per-request — compare what Gemini thinks vs Claude vs OpenAI vs DeepSeek vs Kimi
+- **You pick the reviewer** per-request — compare what Gemini thinks vs Claude vs OpenAI vs DeepSeek vs Fusion
 - **`model="all"`** fans out to all models in parallel and returns the first 3 responses — instant multi-perspective review
 - **Secrets are redacted** before your code leaves your machine (via [detect-secrets](https://github.com/Yelp/detect-secrets))
 - **Staff engineer prompt** — not generic "review this code" but a structured 6-dimension review covering security, architecture, edge cases, implementation, style, and abstractions
@@ -187,10 +187,12 @@ review_oracle(plan="We plan to...", codebase_context="", model="gemini")
 | `openai` | OpenAI GPT-5.3 Codex | Deep code understanding |
 | `claude` | Anthropic Claude Opus 4.8 | Nuanced architectural feedback |
 | `deepseek` | DeepSeek V4 Pro | Cost-effective deep reasoning |
+| `fusion` | OpenRouter Fusion (`openrouter/fusion`) with `fusion` preset `general-budget` | Budget multi-model synthesis |
+| `glm` | Z.AI GLM-5.2 | Pragmatic production feedback |
 | `kimi` | Kimi K2.6 | Long-horizon coding, multimodal |
-| `all` | All of the above (parallel) | Multi-perspective review |
+| `all` | Panel: Gemini + GPT-5.3 + DeepSeek + Fusion (Budget) | Multi-perspective review |
 
-Pass `model="gemini"`, `model="openai"`, `model="claude"`, `model="deepseek"`, `model="kimi"`, or `model="all"` to any tool. Default is `gemini`.
+Pass `model="gemini"`, `model="openai"`, `model="claude"`, `model="deepseek"`, `model="fusion"`, `model="glm"`, `model="kimi"`, or `model="all"` to any tool. Default is `gemini`.
 
 When `model="all"` is used, reviews are fanned out to all models concurrently. The server returns as soon as the first 3 responses arrive; slower models are cancelled.
 
@@ -293,7 +295,7 @@ uv run pytest tests/ -v
 ```
 AI Assistant  -->  MCP Server  -->  detect-secrets (redact)  -->  OpenRouter API  -->  LLM(s)
                    (6 tools)        (scan & redact secrets)       (unified routing)    (Gemini/OpenAI/Claude/
-                       |                                                                DeepSeek/Kimi)
+                       |                                                                DeepSeek/Fusion/GLM/Kimi)
                     git ops
                (diff/show/branch)
 ```

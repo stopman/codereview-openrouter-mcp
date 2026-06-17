@@ -21,6 +21,7 @@ from codereview_openrouter_mcp.logging import get_logger, setup_logging
 from codereview_openrouter_mcp.models import (
     ALL_REVIEW_MODELS,
     MODEL_DISPLAY_NAMES,
+    get_model_extra_body,
     get_reasoning_config,
     resolve_model,
 )
@@ -49,11 +50,11 @@ CodeReview MCP — multi-model code and plan review via OpenRouter.
 
 - `model="all"` (RECOMMENDED for important reviews): runs a 4-model panel with
   complementary personas — Gemini (architect), GPT-5.3 (detail-oriented),
-  DeepSeek (first-principles / simplicity), Kimi (production/pragmatist).
+  DeepSeek (first-principles / simplicity), Fusion Budget (production/pragmatist).
   Returns the panel's reviews as markdown; the caller (you) synthesizes.
 - Single model picks: `gemini` (default, fast architect lens), `openai`
-  (detail), `deepseek` (simplicity), `kimi` (production), `claude` (detail,
-  thorough).
+  (detail), `deepseek` (simplicity), `fusion` (budget fusion panel), `glm`
+  (single-model production), `kimi` (long-horizon), `claude` (detail, thorough).
 
 ## Attaching project documentation — IMPORTANT
 
@@ -100,6 +101,12 @@ mcp = FastMCP("CodeReview", instructions=SERVER_INSTRUCTIONS)
 
 PLAN_MAX_TOKENS = 16384
 
+def _compose_extra_body(model_name: str, use_reasoning: bool = False) -> dict | None:
+    extra_body = get_model_extra_body(model_name)
+    if use_reasoning:
+        extra_body.update(get_reasoning_config(model_name))
+    return extra_body or None
+
 
 class _Progress:
     """Monotonically increasing progress tracker. Null-safe and exception-safe."""
@@ -126,7 +133,7 @@ async def _do_single_review(
 ) -> tuple[str, str]:
     """Run a single model review. Returns (model_name, result_text)."""
     model_id = resolve_model(model_name)
-    extra_body = get_reasoning_config(model_name) if use_reasoning else None
+    extra_body = _compose_extra_body(model_name, use_reasoning=use_reasoning)
     try:
         result = await get_review(
             prompt, system_prompt, model_id,
@@ -183,7 +190,10 @@ async def _do_review(
              model_id, persona, focus, len(content))
     await progress.update(f"Sending to {display} ({persona}) for review...")
     t0 = time.monotonic()
-    result = await get_review(prompt, system_prompt, model_id)
+    result = await get_review(
+        prompt, system_prompt, model_id,
+        extra_body=_compose_extra_body(model),
+    )
     elapsed = time.monotonic() - t0
     log.info("Review completed in %.1fs, response_len=%d", elapsed, len(result))
     await progress.update(f"Review complete ({elapsed:.0f}s)")
@@ -289,7 +299,7 @@ async def _prepare_diff(diff: str) -> str:
 
     Args:
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, glm, fusion, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -341,7 +351,7 @@ async def review_diff(
     Args:
         repo_path: Path to the git repository (defaults to current directory)
         sha: Commit SHA to review (defaults to HEAD)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, glm, fusion, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -395,7 +405,7 @@ async def review_commit(
         repo_path: Path to the git repository (defaults to current directory)
         branch: Branch to review
         base: Base branch to compare against (defaults to main)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, glm, fusion, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -449,7 +459,7 @@ async def review_branch(
     Args:
         file_path: Path to the file relative to repo_path
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, glm, fusion, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -524,7 +534,7 @@ async def _do_plan_review(
 
     model_id = resolve_model(model)
     display = MODEL_DISPLAY_NAMES.get(model, model_id)
-    extra_body = get_reasoning_config(model)
+    extra_body = _compose_extra_body(model, use_reasoning=True)
     system_prompt = get_plan_review_system_prompt(model)
     persona = get_persona(model) or "default"
 
