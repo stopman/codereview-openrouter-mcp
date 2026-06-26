@@ -213,6 +213,12 @@ def test_resolve_model_deepseek():
     assert resolve_model("deepseek") == "deepseek/deepseek-v4-pro"
 
 
+def test_resolve_model_qwen():
+    from codereview_openrouter_mcp.models import resolve_model
+
+    assert resolve_model("qwen") == "qwen/qwen3.7-max"
+
+
 def test_resolve_model_kimi():
     from codereview_openrouter_mcp.models import resolve_model
 
@@ -302,6 +308,13 @@ def test_reasoning_config_deepseek_uses_enabled():
     assert config["reasoning"]["enabled"] is True
 
 
+def test_reasoning_config_qwen_uses_enabled():
+    from codereview_openrouter_mcp.models import get_reasoning_config
+
+    config = get_reasoning_config("qwen")
+    assert config["reasoning"]["enabled"] is True
+
+
 def test_reasoning_config_kimi_uses_enabled():
     from codereview_openrouter_mcp.models import get_reasoning_config
 
@@ -365,8 +378,8 @@ async def test_multi_model_review_partial_failure():
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
         nonlocal call_count
         call_count += 1
-        if "deepseek" in model_id:
-            raise Exception("DeepSeek is down")
+        if "qwen" in model_id:
+            raise Exception("Qwen is down")
         return f"Review from {model_id}"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
@@ -375,7 +388,7 @@ async def test_multi_model_review_partial_failure():
     # Should still have results from the other models
     assert "Gemini 3.5 Flash" in result
     assert "GPT-5.3 Codex" in result
-    assert "Fusion (Budget)" in result
+    assert "GLM-5.2" in result
     # Should note the failure
     assert "failed" in result.lower() or "error" in result.lower()
 

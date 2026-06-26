@@ -2,7 +2,7 @@
 
 An MCP server that gives your AI coding assistant access to **staff/principal-engineer-level code review** from the world's best LLMs — all through a single OpenRouter API key.
 
-Pick your reviewer per-request: **Gemini 3.5 Flash**, **GPT-5.3 Codex**, **Claude Opus 4.8**, **DeepSeek V4 Pro**, **Fusion (Budget)**, **GLM-5.2**, or **Kimi K2.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
+Pick your reviewer per-request: **Gemini 3.5 Flash**, **GPT-5.3 Codex**, **Claude Opus 4.8**, **DeepSeek V4 Pro**, **Qwen3.7 Max**, **Fusion (Budget)**, **GLM-5.2**, or **Kimi K2.6**. Compare opinions. Get a second (or third) opinion on your code before it ships.
 
 ## Why this exists
 
@@ -187,12 +187,13 @@ review_oracle(plan="We plan to...", codebase_context="", model="gemini")
 | `openai` | OpenAI GPT-5.3 Codex | Deep code understanding |
 | `claude` | Anthropic Claude Opus 4.8 | Nuanced architectural feedback |
 | `deepseek` | DeepSeek V4 Pro | Cost-effective deep reasoning |
+| `qwen` | Alibaba Qwen3.7 Max | First-principles simplicity, strong coding |
 | `fusion` | OpenRouter Fusion (`openrouter/fusion`) with `fusion` preset `general-budget` | Budget multi-model synthesis |
 | `glm` | Z.AI GLM-5.2 | Pragmatic production feedback |
 | `kimi` | Kimi K2.6 | Long-horizon coding, multimodal |
-| `all` | Panel: Gemini + GPT-5.3 + DeepSeek + Fusion (Budget) | Multi-perspective review |
+| `all` | Panel: Gemini + GPT-5.3 + Qwen3.7 Max + GLM-5.2 | Multi-perspective review |
 
-Pass `model="gemini"`, `model="openai"`, `model="claude"`, `model="deepseek"`, `model="fusion"`, `model="glm"`, `model="kimi"`, or `model="all"` to any tool. Default is `gemini`.
+Pass `model="gemini"`, `model="openai"`, `model="claude"`, `model="deepseek"`, `model="qwen"`, `model="fusion"`, `model="glm"`, `model="kimi"`, or `model="all"` to any tool. Default is `gemini`.
 
 When `model="all"` is used, reviews are fanned out to all models concurrently. The server returns as soon as the first 3 responses arrive; slower models are cancelled.
 
@@ -295,7 +296,7 @@ uv run pytest tests/ -v
 ```
 AI Assistant  -->  MCP Server  -->  detect-secrets (redact)  -->  OpenRouter API  -->  LLM(s)
                    (6 tools)        (scan & redact secrets)       (unified routing)    (Gemini/OpenAI/Claude/
-                       |                                                                DeepSeek/Fusion/GLM/Kimi)
+                       |                                                                DeepSeek/Qwen/Fusion/GLM/Kimi)
                     git ops
                (diff/show/branch)
 ```

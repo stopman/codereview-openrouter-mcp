@@ -618,6 +618,7 @@ PERSONA_MAP: dict[str, str] = {
     "openai": PERSONA_DETAIL,
     "claude": PERSONA_DETAIL,
     "deepseek": PERSONA_SIMPLICITY,
+    "qwen": PERSONA_SIMPLICITY,
     "kimi": PERSONA_PRAGMATIST,
     "glm": PERSONA_PRAGMATIST,
     "fusion": PERSONA_PRAGMATIST,
