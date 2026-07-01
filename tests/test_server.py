@@ -1,3 +1,4 @@
+import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -207,28 +208,10 @@ def test_resolve_model_all_known_models():
         assert "/" in model_id, f"Model ID for '{name}' should contain a slash: {model_id}"
 
 
-def test_resolve_model_deepseek():
+def test_resolve_model_grok():
     from codereview_openrouter_mcp.models import resolve_model
 
-    assert resolve_model("deepseek") == "deepseek/deepseek-v4-pro"
-
-
-def test_resolve_model_kimi():
-    from codereview_openrouter_mcp.models import resolve_model
-
-    assert resolve_model("kimi") == "moonshotai/kimi-k2.6"
-
-
-def test_resolve_model_glm():
-    from codereview_openrouter_mcp.models import resolve_model
-
-    assert resolve_model("glm") == "z-ai/glm-5.2"
-
-
-def test_resolve_model_fusion():
-    from codereview_openrouter_mcp.models import resolve_model
-
-    assert resolve_model("fusion") == "openrouter/fusion"
+    assert resolve_model("grok") == "x-ai/grok-4.3"
 
 
 def test_resolve_model_invalid():
@@ -247,19 +230,19 @@ def test_resolve_model_all_raises():
 
 
 def test_all_review_models_is_expected_panel():
-    """Lock in the panel composition: Opus replaces Qwen in the simplicity slot.
+    """Lock in the panel composition: four US, ZDR-routable models, one per persona.
 
-    Qwen has no Zero-Data-Retention endpoint on OpenRouter, so under the
-    default provider.zdr=true routing it always hard-failed; it was removed
-    in favor of ZDR-routable Claude Opus 4.8.
+    Gemini=architect, GPT-5.3=detail, Opus=simplicity, Grok=pragmatist. The
+    non-US members (DeepSeek, Kimi, GLM) and the Fusion meta-router were
+    removed; Grok 4.3 fills the pragmatist slot GLM used to hold.
     """
     from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
 
-    assert ALL_REVIEW_MODELS == ["gemini", "openai", "claude", "glm"]
+    assert ALL_REVIEW_MODELS == ["gemini", "openai", "claude", "grok"]
 
 
-def test_qwen_fully_removed_from_registry():
-    """Qwen must not linger as a selectable (but non-ZDR, always-failing) model."""
+def test_removed_models_absent_from_registry():
+    """Retired models must not linger anywhere in the registry as dead options."""
     from codereview_openrouter_mcp.models import (
         MODEL_DISPLAY_NAMES,
         MODELS,
@@ -267,10 +250,11 @@ def test_qwen_fully_removed_from_registry():
     )
     from codereview_openrouter_mcp.prompts import PERSONA_MAP
 
-    assert "qwen" not in MODELS
-    assert "qwen" not in MODEL_DISPLAY_NAMES
-    assert "qwen" not in REASONING_CONFIG
-    assert "qwen" not in PERSONA_MAP
+    for name in ("qwen", "deepseek", "kimi", "glm", "fusion"):
+        assert name not in MODELS, f"'{name}' still in MODELS"
+        assert name not in MODEL_DISPLAY_NAMES, f"'{name}' still in MODEL_DISPLAY_NAMES"
+        assert name not in REASONING_CONFIG, f"'{name}' still in REASONING_CONFIG"
+        assert name not in PERSONA_MAP, f"'{name}' still in PERSONA_MAP"
 
 
 def test_all_review_models_are_valid():
@@ -322,40 +306,11 @@ def test_reasoning_config_gemini_uses_high():
     assert config["reasoning"]["effort"] == "high"
 
 
-def test_reasoning_config_deepseek_uses_enabled():
+def test_reasoning_config_grok_uses_high():
     from codereview_openrouter_mcp.models import get_reasoning_config
 
-    config = get_reasoning_config("deepseek")
-    assert config["reasoning"]["enabled"] is True
-
-
-def test_reasoning_config_kimi_uses_enabled():
-    from codereview_openrouter_mcp.models import get_reasoning_config
-
-    config = get_reasoning_config("kimi")
-    assert config["reasoning"]["enabled"] is True
-
-
-def test_reasoning_config_glm_uses_enabled():
-    from codereview_openrouter_mcp.models import get_reasoning_config
-
-    config = get_reasoning_config("glm")
-    assert config["reasoning"]["enabled"] is True
-
-
-def test_reasoning_config_fusion_uses_enabled():
-    from codereview_openrouter_mcp.models import get_reasoning_config
-
-    config = get_reasoning_config("fusion")
-    assert config["reasoning"]["enabled"] is True
-
-
-def test_model_extra_body_fusion_uses_general_budget_preset():
-    from codereview_openrouter_mcp.models import get_model_extra_body
-
-    extra = get_model_extra_body("fusion")
-    assert extra["plugins"][0]["id"] == "fusion"
-    assert extra["plugins"][0]["preset"] == "general-budget"
+    config = get_reasoning_config("grok")
+    assert config["reasoning"]["effort"] == "high"
 
 
 # --- Multi-model review tests ---
@@ -384,16 +339,18 @@ async def test_multi_model_review_all_succeed():
 
 @pytest.mark.asyncio
 async def test_multi_model_review_partial_failure():
-    """If one model fails, the others should still return results."""
+    """If one model fails, the others should still return results.
+
+    The failing model returns immediately while the survivors yield briefly,
+    so the error is deterministically recorded before the min_results quorum
+    is reached (otherwise the failing straggler could be cancelled unseen).
+    """
     from codereview_openrouter_mcp.server import _do_multi_model_review
 
-    call_count = 0
-
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
-        nonlocal call_count
-        call_count += 1
-        if "claude" in model_id:
-            raise Exception("Claude is down")
+        if "grok" in model_id:
+            raise Exception("Grok is down")
+        await asyncio.sleep(0.01)
         return f"Review from {model_id}"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
@@ -402,7 +359,7 @@ async def test_multi_model_review_partial_failure():
     # Should still have results from the other models
     assert "Gemini 3.5 Flash" in result
     assert "GPT-5.3 Codex" in result
-    assert "GLM-5.2" in result
+    assert "Claude Opus 4.8" in result
     # Should note the failure
     assert "failed" in result.lower() or "error" in result.lower()
 
@@ -604,8 +561,7 @@ def test_persona_map_assigns_expected_personas():
     assert PERSONA_MAP["gemini"] == PERSONA_ARCHITECT
     assert PERSONA_MAP["openai"] == PERSONA_DETAIL
     assert PERSONA_MAP["claude"] == PERSONA_SIMPLICITY
-    assert PERSONA_MAP["deepseek"] == PERSONA_SIMPLICITY
-    assert PERSONA_MAP["fusion"] == PERSONA_PRAGMATIST
+    assert PERSONA_MAP["grok"] == PERSONA_PRAGMATIST
 
 
 def test_get_review_system_prompt_returns_persona_specific():
@@ -614,8 +570,8 @@ def test_get_review_system_prompt_returns_persona_specific():
 
     architect = get_review_system_prompt("gemini")
     detail = get_review_system_prompt("openai")
-    simplicity = get_review_system_prompt("deepseek")
-    pragmatist = get_review_system_prompt("fusion")
+    simplicity = get_review_system_prompt("claude")
+    pragmatist = get_review_system_prompt("grok")
 
     # Each should be distinct
     assert len({architect, detail, simplicity, pragmatist}) == 4
@@ -640,8 +596,8 @@ def test_get_plan_review_system_prompt_returns_persona_specific():
 
     architect = get_plan_review_system_prompt("gemini")
     detail = get_plan_review_system_prompt("openai")
-    simplicity = get_plan_review_system_prompt("deepseek")
-    pragmatist = get_plan_review_system_prompt("fusion")
+    simplicity = get_plan_review_system_prompt("claude")
+    pragmatist = get_plan_review_system_prompt("grok")
 
     assert len({architect, detail, simplicity, pragmatist}) == 4
     assert "Architect" in architect
@@ -702,11 +658,11 @@ async def test_review_diff_single_model_uses_persona_prompt(mock_ctx):
         patch("codereview_openrouter_mcp.server.get_working_diff", new_callable=AsyncMock, return_value="diff --git a/f.py\n+x"),
         patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review),
     ):
-        await review_diff(repo_path=".", model="deepseek", ctx=mock_ctx)
+        await review_diff(repo_path=".", model="grok", ctx=mock_ctx)
 
-    assert captured["system_prompt"] == get_review_system_prompt("deepseek")
-    # And it must be the simplicity persona, not the generic default
-    assert "First-Principles" in captured["system_prompt"] or "Simplicity" in captured["system_prompt"]
+    assert captured["system_prompt"] == get_review_system_prompt("grok")
+    # And it must be the pragmatist persona, not the generic default
+    assert "Pragmatist" in captured["system_prompt"] or "Production" in captured["system_prompt"]
 
 
 @pytest.mark.asyncio
@@ -723,36 +679,12 @@ async def test_review_plan_single_model_uses_persona_prompt(mock_ctx):
         return "LGTM"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
-        await review_plan(plan="Add caching layer", model="fusion", ctx=mock_ctx)
+        await review_plan(plan="Add caching layer", model="grok", ctx=mock_ctx)
 
-    assert captured["system_prompt"] == get_plan_review_system_prompt("fusion")
-    assert captured["extra_body"]["plugins"][0]["id"] == "fusion"
-    assert captured["extra_body"]["plugins"][0]["preset"] == "general-budget"
-    assert captured["extra_body"]["reasoning"]["enabled"] is True
+    assert captured["system_prompt"] == get_plan_review_system_prompt("grok")
+    # Plan reviews run with reasoning enabled — grok is configured for high effort.
+    assert captured["extra_body"]["reasoning"]["effort"] == "high"
     assert "Pragmatist" in captured["system_prompt"] or "Production" in captured["system_prompt"]
-
-
-@pytest.mark.asyncio
-async def test_review_diff_fusion_sends_budget_preset(mock_ctx):
-    from codereview_openrouter_mcp.server import review_diff
-
-    captured = {}
-
-    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
-        captured["model_id"] = model_id
-        captured["extra_body"] = extra_body
-        return "LGTM"
-
-    with (
-        patch("codereview_openrouter_mcp.server.validate_repo", new_callable=AsyncMock, return_value=True),
-        patch("codereview_openrouter_mcp.server.get_working_diff", new_callable=AsyncMock, return_value="diff --git a/f.py\n+x"),
-        patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review),
-    ):
-        await review_diff(repo_path=".", model="fusion", ctx=mock_ctx)
-
-    assert captured["model_id"] == "openrouter/fusion"
-    assert captured["extra_body"]["plugins"][0]["id"] == "fusion"
-    assert captured["extra_body"]["plugins"][0]["preset"] == "general-budget"
 
 
 # --- server instructions tests ---

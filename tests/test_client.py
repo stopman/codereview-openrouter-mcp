@@ -10,8 +10,7 @@ def test_resolve_known_models():
     assert resolve_model("gemini") == "google/gemini-3.5-flash"
     assert resolve_model("openai") == "openai/gpt-5.3-codex"
     assert resolve_model("claude") == "anthropic/claude-opus-4.8"
-    assert resolve_model("glm") == "z-ai/glm-5.2"
-    assert resolve_model("fusion") == "openrouter/fusion"
+    assert resolve_model("grok") == "x-ai/grok-4.3"
 
 
 def test_resolve_unknown_model():

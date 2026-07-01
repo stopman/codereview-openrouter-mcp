@@ -617,10 +617,7 @@ PERSONA_MAP: dict[str, str] = {
     "gemini": PERSONA_ARCHITECT,
     "openai": PERSONA_DETAIL,
     "claude": PERSONA_SIMPLICITY,
-    "deepseek": PERSONA_SIMPLICITY,
-    "kimi": PERSONA_PRAGMATIST,
-    "glm": PERSONA_PRAGMATIST,
-    "fusion": PERSONA_PRAGMATIST,
+    "grok": PERSONA_PRAGMATIST,
 }
 
 _REVIEW_PROMPTS_BY_PERSONA: dict[str, str] = {

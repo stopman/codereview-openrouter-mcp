@@ -4,61 +4,42 @@ MODELS: dict[str, str] = {
     "gemini": "google/gemini-3.5-flash",
     "openai": "openai/gpt-5.3-codex",
     "claude": "anthropic/claude-opus-4.8",
-    "deepseek": "deepseek/deepseek-v4-pro",
-    "kimi": "moonshotai/kimi-k2.6",
-    "glm": "z-ai/glm-5.2",
-    "fusion": "openrouter/fusion",
+    "grok": "x-ai/grok-4.3",
 }
 
 DEFAULT_MODEL = "gemini"
 
 # Models to use when model="all" for parallel multi-model review. Each fills a
 # distinct persona slot (see PERSONA_MAP): Gemini=architect, GPT-5.3=detail,
-# Opus=simplicity, GLM-5.2=pragmatist. All four are ZDR-routable on OpenRouter,
-# which is required because the client sends provider.zdr=true by default (see
-# client._privacy_provider) — a model with no ZDR endpoint hard-fails routing.
-# Qwen3.7 Max was dropped from both the panel and MODELS: it has no ZDR endpoint
-# and so always errored under the default privacy routing.
+# Opus=simplicity, Grok=pragmatist. All four are US-hosted and ZDR-routable on
+# OpenRouter, which is required because the client sends provider.zdr=true by
+# default (see client._privacy_provider) — a model with no ZDR endpoint
+# hard-fails routing. The prior non-US members (DeepSeek, Kimi, GLM) and the
+# Fusion meta-router were removed entirely.
 # Caveat: Opus 4.8 is the priciest and slowest member, so in the min_results=3
 # latency race it is the most likely straggler to be cancelled; it earns its
-# place on the quality of the reviews it does land. Fusion stays out of the
-# panel (it is itself a multi-model deliberation, structurally the slowest) but
-# remains selectable via model="fusion".
-ALL_REVIEW_MODELS = ["gemini", "openai", "claude", "glm"]
+# place on the quality of the reviews it does land. Grok 4.3 is cheap and fast,
+# which keeps the race fair.
+ALL_REVIEW_MODELS = ["gemini", "openai", "claude", "grok"]
 
 # Display names for multi-model output headers
 MODEL_DISPLAY_NAMES: dict[str, str] = {
     "gemini": "Gemini 3.5 Flash",
     "openai": "GPT-5.3 Codex",
     "claude": "Claude Opus 4.8",
-    "deepseek": "DeepSeek V4 Pro",
-    "kimi": "Kimi K2.6",
-    "glm": "GLM-5.2",
-    "fusion": "Fusion (Budget)",
+    "grok": "Grok 4.3",
 }
 
-# Per-model always-on request body additions.
-# `fusion` is configured to use the curated budget panel via preset slug.
-MODEL_EXTRA_BODY: dict[str, dict] = {
-    "fusion": {
-        "plugins": [
-            {
-                "id": "fusion",
-                "preset": "general-budget",
-            },
-        ],
-    },
-}
+# Per-model always-on request body additions. Currently none — kept as an
+# extension point so a model can pin provider/plugin preferences if needed.
+MODEL_EXTRA_BODY: dict[str, dict] = {}
 
 # Per-model reasoning configuration for maximum effort via OpenRouter.
 REASONING_CONFIG: dict[str, dict] = {
     "gemini": {"reasoning": {"effort": "high"}},
     "openai": {"reasoning": {"effort": "xhigh"}},
     "claude": {"reasoning": {"effort": "xhigh"}, "verbosity": "max"},
-    "deepseek": {"reasoning": {"enabled": True}},
-    "kimi": {"reasoning": {"enabled": True}},
-    "glm": {"reasoning": {"enabled": True}},
-    "fusion": {"reasoning": {"enabled": True}},
+    "grok": {"reasoning": {"effort": "high"}},
 }
 
 
