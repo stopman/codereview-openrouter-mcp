@@ -50,12 +50,12 @@ CodeReview MCP — multi-model code and plan review via OpenRouter.
 
 - `model="all"` (RECOMMENDED for important reviews): runs a 4-model panel with
   complementary personas — Gemini (architect), GPT-5.3 (detail-oriented),
-  Qwen3.7 Max (first-principles / simplicity), GLM-5.2 (production/pragmatist).
+  Claude Opus 4.8 (first-principles / simplicity), GLM-5.2 (production/pragmatist).
   Returns the panel's reviews as markdown; the caller (you) synthesizes.
 - Single model picks: `gemini` (default, fast architect lens), `openai`
-  (detail), `qwen` (simplicity), `deepseek` (cost-effective deep reasoning),
-  `glm` (production/pragmatist), `kimi` (long-horizon), `fusion` (budget
-  fusion panel), `claude` (detail, thorough).
+  (detail), `claude` (first-principles simplicity, deepest reasoning),
+  `deepseek` (cost-effective deep reasoning), `glm` (production/pragmatist),
+  `kimi` (long-horizon), `fusion` (budget fusion panel).
 
 ## Attaching project documentation — IMPORTANT
 
@@ -300,7 +300,7 @@ async def _prepare_diff(diff: str) -> str:
 
     Args:
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, qwen, kimi, glm, fusion, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, glm, fusion, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -352,7 +352,7 @@ async def review_diff(
     Args:
         repo_path: Path to the git repository (defaults to current directory)
         sha: Commit SHA to review (defaults to HEAD)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, qwen, kimi, glm, fusion, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, glm, fusion, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -406,7 +406,7 @@ async def review_commit(
         repo_path: Path to the git repository (defaults to current directory)
         branch: Branch to review
         base: Base branch to compare against (defaults to main)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, qwen, kimi, glm, fusion, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, glm, fusion, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -460,7 +460,7 @@ async def review_branch(
     Args:
         file_path: Path to the file relative to repo_path
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, qwen, kimi, glm, fusion, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, glm, fusion, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -563,7 +563,7 @@ async def _do_plan_review(
     Args:
         plan: The plan or design document text to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, qwen, kimi, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         repo_path: Path to the git repository — required only if context_files is set
         context_files: Optional but recommended for plan reviews — paths
             (relative to repo_path) to markdown/text docs that ground the
@@ -613,7 +613,7 @@ async def review_plan(
     Args:
         plan: The plan, design document, or reasoning task to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gemini, openai, claude, deepseek, qwen, kimi, all
+        model: Model to use for review. Options: gemini, openai, claude, deepseek, kimi, all
         repo_path: Path to the git repository — required only if context_files is set
         context_files: Optional but recommended for plan reviews — paths
             (relative to repo_path) to markdown/text docs that ground the

@@ -213,12 +213,6 @@ def test_resolve_model_deepseek():
     assert resolve_model("deepseek") == "deepseek/deepseek-v4-pro"
 
 
-def test_resolve_model_qwen():
-    from codereview_openrouter_mcp.models import resolve_model
-
-    assert resolve_model("qwen") == "qwen/qwen3.7-max"
-
-
 def test_resolve_model_kimi():
     from codereview_openrouter_mcp.models import resolve_model
 
@@ -250,6 +244,33 @@ def test_resolve_model_all_raises():
 
     with pytest.raises(ValueError, match="resolve_all_models"):
         resolve_model("all")
+
+
+def test_all_review_models_is_expected_panel():
+    """Lock in the panel composition: Opus replaces Qwen in the simplicity slot.
+
+    Qwen has no Zero-Data-Retention endpoint on OpenRouter, so under the
+    default provider.zdr=true routing it always hard-failed; it was removed
+    in favor of ZDR-routable Claude Opus 4.8.
+    """
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
+
+    assert ALL_REVIEW_MODELS == ["gemini", "openai", "claude", "glm"]
+
+
+def test_qwen_fully_removed_from_registry():
+    """Qwen must not linger as a selectable (but non-ZDR, always-failing) model."""
+    from codereview_openrouter_mcp.models import (
+        MODEL_DISPLAY_NAMES,
+        MODELS,
+        REASONING_CONFIG,
+    )
+    from codereview_openrouter_mcp.prompts import PERSONA_MAP
+
+    assert "qwen" not in MODELS
+    assert "qwen" not in MODEL_DISPLAY_NAMES
+    assert "qwen" not in REASONING_CONFIG
+    assert "qwen" not in PERSONA_MAP
 
 
 def test_all_review_models_are_valid():
@@ -305,13 +326,6 @@ def test_reasoning_config_deepseek_uses_enabled():
     from codereview_openrouter_mcp.models import get_reasoning_config
 
     config = get_reasoning_config("deepseek")
-    assert config["reasoning"]["enabled"] is True
-
-
-def test_reasoning_config_qwen_uses_enabled():
-    from codereview_openrouter_mcp.models import get_reasoning_config
-
-    config = get_reasoning_config("qwen")
     assert config["reasoning"]["enabled"] is True
 
 
@@ -378,8 +392,8 @@ async def test_multi_model_review_partial_failure():
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
         nonlocal call_count
         call_count += 1
-        if "qwen" in model_id:
-            raise Exception("Qwen is down")
+        if "claude" in model_id:
+            raise Exception("Claude is down")
         return f"Review from {model_id}"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
@@ -589,6 +603,7 @@ def test_persona_map_assigns_expected_personas():
 
     assert PERSONA_MAP["gemini"] == PERSONA_ARCHITECT
     assert PERSONA_MAP["openai"] == PERSONA_DETAIL
+    assert PERSONA_MAP["claude"] == PERSONA_SIMPLICITY
     assert PERSONA_MAP["deepseek"] == PERSONA_SIMPLICITY
     assert PERSONA_MAP["fusion"] == PERSONA_PRAGMATIST
 
@@ -951,11 +966,11 @@ async def test_review_diff_missing_context_file_surfaces_notice(mock_ctx, tmp_pa
 # --- end context_files tests ---
 
 
-def test_claude_mapped_to_detail_persona():
-    """Single-model claude uses the detail-oriented persona prompt."""
-    from codereview_openrouter_mcp.prompts import PERSONA_DETAIL, PERSONA_MAP
+def test_claude_mapped_to_simplicity_persona():
+    """Claude fills the first-principles / simplicity slot in the panel."""
+    from codereview_openrouter_mcp.prompts import PERSONA_MAP, PERSONA_SIMPLICITY
 
-    assert PERSONA_MAP["claude"] == PERSONA_DETAIL
+    assert PERSONA_MAP["claude"] == PERSONA_SIMPLICITY
 
 
 @pytest.mark.asyncio

@@ -5,7 +5,6 @@ MODELS: dict[str, str] = {
     "openai": "openai/gpt-5.3-codex",
     "claude": "anthropic/claude-opus-4.8",
     "deepseek": "deepseek/deepseek-v4-pro",
-    "qwen": "qwen/qwen3.7-max",
     "kimi": "moonshotai/kimi-k2.6",
     "glm": "z-ai/glm-5.2",
     "fusion": "openrouter/fusion",
@@ -13,15 +12,19 @@ MODELS: dict[str, str] = {
 
 DEFAULT_MODEL = "gemini"
 
-# Models to use when model="all" for parallel multi-model review.
-# All four are fast single models so the latency race is fair (the slowest
-# straggler is dropped by min_results). GLM-5.2 fills the pragmatist persona
-# slot (see PERSONA_MAP). Fusion is intentionally excluded from the panel:
-# it is itself a multi-model deliberation, so it is structurally the slowest
-# member and would almost always be the one cancelled — wasting a composite
-# call while rarely contributing a review. It remains available via
-# model="fusion".
-ALL_REVIEW_MODELS = ["gemini", "openai", "qwen", "glm"]
+# Models to use when model="all" for parallel multi-model review. Each fills a
+# distinct persona slot (see PERSONA_MAP): Gemini=architect, GPT-5.3=detail,
+# Opus=simplicity, GLM-5.2=pragmatist. All four are ZDR-routable on OpenRouter,
+# which is required because the client sends provider.zdr=true by default (see
+# client._privacy_provider) — a model with no ZDR endpoint hard-fails routing.
+# Qwen3.7 Max was dropped from both the panel and MODELS: it has no ZDR endpoint
+# and so always errored under the default privacy routing.
+# Caveat: Opus 4.8 is the priciest and slowest member, so in the min_results=3
+# latency race it is the most likely straggler to be cancelled; it earns its
+# place on the quality of the reviews it does land. Fusion stays out of the
+# panel (it is itself a multi-model deliberation, structurally the slowest) but
+# remains selectable via model="fusion".
+ALL_REVIEW_MODELS = ["gemini", "openai", "claude", "glm"]
 
 # Display names for multi-model output headers
 MODEL_DISPLAY_NAMES: dict[str, str] = {
@@ -29,7 +32,6 @@ MODEL_DISPLAY_NAMES: dict[str, str] = {
     "openai": "GPT-5.3 Codex",
     "claude": "Claude Opus 4.8",
     "deepseek": "DeepSeek V4 Pro",
-    "qwen": "Qwen3.7 Max",
     "kimi": "Kimi K2.6",
     "glm": "GLM-5.2",
     "fusion": "Fusion (Budget)",
@@ -54,7 +56,6 @@ REASONING_CONFIG: dict[str, dict] = {
     "openai": {"reasoning": {"effort": "xhigh"}},
     "claude": {"reasoning": {"effort": "xhigh"}, "verbosity": "max"},
     "deepseek": {"reasoning": {"enabled": True}},
-    "qwen": {"reasoning": {"enabled": True}},
     "kimi": {"reasoning": {"enabled": True}},
     "glm": {"reasoning": {"enabled": True}},
     "fusion": {"reasoning": {"enabled": True}},
