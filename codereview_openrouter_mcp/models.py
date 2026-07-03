@@ -20,11 +20,30 @@ DEFAULT_MODEL = "gemini"
 # meta-router were removed entirely; Grok 4.3 was later replaced by Opus 4.8
 # because Fable 5's dual-use safety measures make it decline security-focused
 # review work, so the panel needs a member that owns security.
-# Caveat: Fable 5 ($10/M in, $50/M out) and Opus 4.8 ($5/M in, $25/M out) are
-# the priciest, slowest members, so in the min_results=3 latency race one of
-# them is the most likely straggler to be cancelled; they earn their places on
-# the quality of the reviews they do land.
+# model="all" waits for every member; a member that errors out is covered by
+# its FALLBACK_MODELS entry so no persona goes missing. Caveat: Fable 5
+# ($10/M in, $50/M out) and Opus 4.8 ($5/M in, $25/M out) are the priciest,
+# slowest members, and panel wall-clock time is set by the slowest reviewer.
 ALL_REVIEW_MODELS = ["gemini", "openai", "claude", "opus"]
+
+# Fallback for each panel slot when its primary model errors out. Cross-vendor
+# so a provider outage doesn't take primary and fallback down together; both
+# fallbacks are cheap, fast, and ZDR-routable. Fallback runs send no per-model
+# extra body (no reasoning tuning, no provider pins) so they always get the
+# client's full default privacy routing.
+FALLBACK_MODELS: dict[str, str] = {
+    "gemini": "anthropic/claude-haiku-4.5",
+    "openai": "anthropic/claude-haiku-4.5",
+    "claude": "google/gemini-3.5-flash",
+    "opus": "google/gemini-3.5-flash",
+}
+
+# Display names for fallback model ids (keyed by id, unlike
+# MODEL_DISPLAY_NAMES which is keyed by panel slot name).
+FALLBACK_DISPLAY_NAMES: dict[str, str] = {
+    "anthropic/claude-haiku-4.5": "Claude Haiku 4.5",
+    "google/gemini-3.5-flash": "Gemini 3.5 Flash",
+}
 
 # Display names for multi-model output headers
 MODEL_DISPLAY_NAMES: dict[str, str] = {

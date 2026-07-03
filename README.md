@@ -191,6 +191,8 @@ review_oracle(plan="We plan to...", codebase_context="", model="gemini")
 
 Pass `model="gemini"`, `model="openai"`, `model="claude"`, `model="opus"`, or `model="all"` to any tool. Default is `gemini`.
 
+With `model="all"` the server waits for the whole panel. If a panel member errors out, its persona is re-run on a lightweight fallback model (Claude Haiku 4.5 or Gemini 3.5 Flash — always cross-vendor from the primary) and the substitution is disclosed in the review's section header.
+
 When `model="all"` is used, reviews are fanned out to all models concurrently. The server returns as soon as the first 3 responses arrive; slower models are cancelled.
 
 ## Focus areas

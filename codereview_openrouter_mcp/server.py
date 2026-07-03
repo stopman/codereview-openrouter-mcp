@@ -20,6 +20,8 @@ from codereview_openrouter_mcp.git_ops import (
 from codereview_openrouter_mcp.logging import get_logger, setup_logging
 from codereview_openrouter_mcp.models import (
     ALL_REVIEW_MODELS,
+    FALLBACK_DISPLAY_NAMES,
+    FALLBACK_MODELS,
     MODEL_DISPLAY_NAMES,
     get_model_extra_body,
     get_reasoning_config,
@@ -94,8 +96,11 @@ modifies, and any in-flight related plans.
 
 ## Output
 
-Multi-model reviews return one markdown section per reviewer, headed by
-model + persona (e.g. `# Review by Gemini 3.1 Pro — architect persona`).
+Multi-model reviews wait for the entire panel and return one markdown
+section per reviewer, headed by model + persona (e.g. `# Review by
+Gemini 3.5 Flash — architect persona`). If a panel member fails, its
+persona is covered by a lightweight fallback model (Claude Haiku 4.5 or
+Gemini 3.5 Flash) and the section header discloses the substitution.
 When `model="all"`, expect to synthesize across the panel yourself; do not
 just paste the raw output to the user — surface the strongest agreed-upon
 findings and arbitrate disagreements.
@@ -217,13 +222,17 @@ async def _do_multi_model_review(
     so a multi-model panel can mix personas (architect / detail / simplicity /
     pragmatist) rather than asking every model the same generic question.
 
-    Returns Markdown with one section per successful panel reviewer. Synthesis
-    across the panel is left to the caller (typically the Claude agent invoking
-    this MCP), which already has the originating context.
+    Waits for the whole panel — no quorum, no cancellation. A member whose
+    review fails is retried once on its FALLBACK_MODELS entry with the same
+    persona prompt (and default privacy routing), so every persona is
+    represented unless the fallback fails too. Returns Markdown with one
+    section per reviewer; fallback sections disclose the substitution in the
+    header. Synthesis across the panel is left to the caller (typically the
+    Claude agent invoking this MCP), which already has the originating context.
     """
-    min_results = min(3, len(ALL_REVIEW_MODELS))
-    log.info("Starting multi-model review across %d models (returning after %d): %s",
-             len(ALL_REVIEW_MODELS), min_results, ALL_REVIEW_MODELS)
+    panel_size = len(ALL_REVIEW_MODELS)
+    log.info("Starting multi-model review across %d models (waiting for all): %s",
+             panel_size, ALL_REVIEW_MODELS)
     t0 = time.monotonic()
 
     tasks = {
@@ -239,44 +248,81 @@ async def _do_multi_model_review(
 
     sections = []
     errors = []
-    done_count = 0
+    fallback_tasks: list[asyncio.Task] = []
+
+    async def _fallback_review(slot: str, fallback_id: str) -> tuple[str, str, str]:
+        """Re-run a failed slot's persona on its fallback model.
+
+        extra_body=None on purpose: fallbacks run with the client's default
+        privacy routing and no reasoning tuning — never the primary slot's
+        provider pins (e.g. the fable ZDR exemption).
+        """
+        try:
+            text = await get_review(
+                prompt, system_prompt_fn(slot), fallback_id,
+                extra_body=None, max_tokens=max_tokens,
+            )
+        except Exception as e:
+            log.error("Fallback %s for slot %s failed: %s", fallback_id, slot, e)
+            text = f"Error: Fallback review with {fallback_id} failed — {e}"
+        return slot, fallback_id, text
 
     for coro in asyncio.as_completed(tasks.keys()):
         try:
             result = await coro
         except Exception as e:
             errors.append(f"Unexpected error: {e}")
-            done_count += 1
             continue
 
         model_name, review_text = result
         display_name = MODEL_DISPLAY_NAMES.get(model_name, model_name)
-        done_count += 1
 
         persona = get_persona(model_name)
         persona_label = f" — {persona} persona" if persona else ""
 
         if review_text.startswith("Error:"):
-            errors.append(f"{display_name}{persona_label}: {review_text}")
+            fallback_id = FALLBACK_MODELS.get(model_name)
+            if fallback_id:
+                fb_display = FALLBACK_DISPLAY_NAMES.get(fallback_id, fallback_id)
+                errors.append(
+                    f"{display_name}{persona_label}: {review_text} (fell back to {fb_display})"
+                )
+                # Launch immediately so the fallback overlaps still-running primaries.
+                fallback_tasks.append(
+                    asyncio.create_task(_fallback_review(model_name, fallback_id))
+                )
+            else:
+                errors.append(f"{display_name}{persona_label}: {review_text}")
         else:
             sections.append(f"---\n\n# Review by {display_name}{persona_label}\n\n{review_text}")
             if progress:
                 await progress.update(
-                    f"{display_name} complete ({len(sections)}/{min_results})",
+                    f"{display_name} complete ({len(sections)}/{panel_size})",
                 )
 
-        if len(sections) >= min_results:
-            break
+    for coro in asyncio.as_completed(fallback_tasks):
+        slot, fallback_id, review_text = await coro
+        display_name = MODEL_DISPLAY_NAMES.get(slot, slot)
+        fb_display = FALLBACK_DISPLAY_NAMES.get(fallback_id, fallback_id)
+        persona = get_persona(slot)
+        persona_label = f" — {persona} persona" if persona else ""
 
-    # Cancel any still-running tasks
-    for task in tasks:
-        if not task.done():
-            task.cancel()
+        if review_text.startswith("Error:"):
+            errors.append(f"{fb_display} (fallback for {display_name}){persona_label}: {review_text}")
+        else:
+            sections.append(
+                f"---\n\n# Review by {fb_display} (fallback for {display_name})"
+                f"{persona_label}\n\n{review_text}"
+            )
+            if progress:
+                await progress.update(
+                    f"{fb_display} (fallback for {display_name}) complete "
+                    f"({len(sections)}/{panel_size})",
+                )
 
     elapsed = time.monotonic() - t0
-    remaining = len(ALL_REVIEW_MODELS) - done_count
-    log.info("Multi-model review completed in %.1fs (%d succeeded, %d failed, %d skipped)",
-             elapsed, len(sections), len(errors), remaining)
+    log.info("Multi-model review completed in %.1fs (%d sections, %d fallbacks launched, %d failure notes)",
+             elapsed, len(sections), len(fallback_tasks), len(errors))
 
     parts = []
     if errors:
@@ -325,8 +371,7 @@ async def review_diff(
 ) -> str:
     log.info("review_diff called: repo_path=%s, model=%s, focus=%s, context_files=%s",
              repo_path, model, focus, context_files)
-    min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 2 + (min_results + 1 if model == "all" else 2)
+    total = 2 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Validating repository...")
@@ -378,8 +423,7 @@ async def review_commit(
 ) -> str:
     log.info("review_commit called: repo_path=%s, sha=%s, model=%s, focus=%s, context_files=%s",
              repo_path, sha, model, focus, context_files)
-    min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 2 + (min_results + 1 if model == "all" else 2)
+    total = 2 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Validating repository...")
@@ -433,8 +477,7 @@ async def review_branch(
 ) -> str:
     log.info("review_branch called: branch=%s, base=%s, repo_path=%s, model=%s, focus=%s, context_files=%s",
              branch, base, repo_path, model, focus, context_files)
-    min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 2 + (min_results + 1 if model == "all" else 2)
+    total = 2 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Validating repository...")
@@ -486,8 +529,7 @@ async def review_file(
 ) -> str:
     log.info("review_file called: file_path=%s, repo_path=%s, model=%s, focus=%s, context_files=%s",
              file_path, repo_path, model, focus, context_files)
-    min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 2 + (min_results + 1 if model == "all" else 2)
+    total = 2 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Validating repository...")
@@ -586,8 +628,7 @@ async def review_plan(
 ) -> str:
     log.info("review_plan called: model=%s, plan_len=%d, context_files=%s",
              model, len(plan), context_files)
-    min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 1 + (min_results + 1 if model == "all" else 2)
+    total = 1 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Preparing plan review...")
@@ -636,8 +677,7 @@ async def review_oracle(
 ) -> str:
     log.info("review_oracle called: model=%s, plan_len=%d, context_files=%s",
              model, len(plan), context_files)
-    min_results = min(3, len(ALL_REVIEW_MODELS))
-    total = 1 + (min_results + 1 if model == "all" else 2)
+    total = 1 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
     progress = _Progress(ctx, total)
     try:
         await progress.update("Preparing plan review...")

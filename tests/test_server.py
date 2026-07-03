@@ -353,7 +353,8 @@ def _fixed_prompt_fn(prompt: str):
 
 @pytest.mark.asyncio
 async def test_multi_model_review_all_succeed():
-    """model='all' should return results from first 3 models that complete."""
+    """model='all' waits for the whole panel: one section per panel member."""
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
     from codereview_openrouter_mcp.server import _do_multi_model_review
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
@@ -362,19 +363,20 @@ async def test_multi_model_review_all_succeed():
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         result = await _do_multi_model_review("test prompt", _fixed_prompt_fn("system prompt"))
 
-    # Should have exactly 3 review sections (returns after first 3)
-    assert result.count("# Review by") == 3
+    assert result.count("# Review by") == len(ALL_REVIEW_MODELS)
     assert "failed" not in result.lower()
+    assert "fallback" not in result.lower()
 
 
 @pytest.mark.asyncio
-async def test_multi_model_review_partial_failure():
-    """If one model fails, the others should still return results.
+async def test_multi_model_review_partial_failure_uses_fallback():
+    """A failed panel member's persona is covered by its fallback model.
 
-    The failing model returns immediately while the survivors yield briefly,
-    so the error is deterministically recorded before the min_results quorum
-    is reached (otherwise the failing straggler could be cancelled unseen).
+    Opus fails, so its pragmatist slot must be re-run on the fallback
+    (Gemini 3.5 Flash), the section header must disclose the substitution,
+    and the warning block must record the primary failure.
     """
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
     from codereview_openrouter_mcp.server import _do_multi_model_review
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
@@ -386,17 +388,20 @@ async def test_multi_model_review_partial_failure():
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         result = await _do_multi_model_review("test prompt", _fixed_prompt_fn("system prompt"))
 
-    # Should still have results from the other models
+    # The other members still report normally
     assert "Gemini 3.5 Flash" in result
     assert "GPT-5.3 Codex" in result
     assert "Claude Fable 5" in result
-    # Should note the failure
+    # The pragmatist slot is covered by the fallback, disclosed in the header
+    assert result.count("# Review by") == len(ALL_REVIEW_MODELS)
+    assert "fallback for Claude Opus 4.8" in result
+    # And the primary failure is still surfaced
     assert "failed" in result.lower() or "error" in result.lower()
 
 
 @pytest.mark.asyncio
 async def test_multi_model_review_all_fail():
-    """If all models fail, should return a clear error."""
+    """If all primaries AND all fallbacks fail, return a clear error."""
     from codereview_openrouter_mcp.server import _do_multi_model_review
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
@@ -537,7 +542,7 @@ async def test_review_plan_all_uses_multi_model(mock_ctx):
 
 @pytest.mark.asyncio
 async def test_review_diff_all_fans_out(mock_ctx):
-    """review_diff with model='all' should produce multi-model output (first 3)."""
+    """review_diff with model='all' should produce output from the whole panel."""
     from codereview_openrouter_mcp.server import review_diff
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
@@ -550,8 +555,63 @@ async def test_review_diff_all_fans_out(mock_ctx):
     ):
         result = await review_diff(repo_path=".", model="all", ctx=mock_ctx)
 
-    # Returns after first 3 models complete
-    assert result.count("# Review by") == 3
+    # Waits for the whole panel
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
+    assert result.count("# Review by") == len(ALL_REVIEW_MODELS)
+
+
+# --- Fallback model tests ---
+
+
+def test_fallback_models_cover_panel():
+    """Every panel slot needs a fallback that is a different, valid model."""
+    from codereview_openrouter_mcp.models import (
+        ALL_REVIEW_MODELS,
+        FALLBACK_MODELS,
+        resolve_model,
+    )
+
+    for name in ALL_REVIEW_MODELS:
+        fallback_id = FALLBACK_MODELS.get(name)
+        assert fallback_id, f"No fallback configured for panel slot '{name}'"
+        assert "/" in fallback_id, f"Fallback for '{name}' is not a model id: {fallback_id}"
+        assert fallback_id != resolve_model(name), (
+            f"Fallback for '{name}' must differ from its primary"
+        )
+
+
+@pytest.mark.asyncio
+async def test_fallback_review_uses_clean_extra_body():
+    """Fallback runs must not inherit the primary slot's extra_body.
+
+    In particular the claude slot's provider.zdr=False pin (Fable 5 has no
+    ZDR endpoint) must never ride along to the fallback model, which is
+    ZDR-routable and should get the full default privacy routing.
+    """
+    from codereview_openrouter_mcp.prompts import get_review_system_prompt
+    from codereview_openrouter_mcp.server import _do_multi_model_review
+
+    calls = []
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        calls.append({"model_id": model_id, "system_prompt": system_prompt, "extra_body": extra_body})
+        if "fable" in model_id:
+            raise Exception("Fable is down")
+        return f"Review from {model_id}"
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        result = await _do_multi_model_review("test prompt", get_review_system_prompt)
+
+    assert "fallback for Claude Fable 5" in result
+    simplicity_prompt = get_review_system_prompt("claude")
+    fallback_calls = [
+        c for c in calls
+        if c["system_prompt"] == simplicity_prompt and "fable" not in c["model_id"]
+    ]
+    assert len(fallback_calls) == 1, "Expected exactly one fallback run for the claude slot"
+    assert fallback_calls[0]["extra_body"] is None, (
+        "Fallback must run with default privacy routing, not the primary's extra_body"
+    )
 
 
 # --- Persona dispatch tests ---
@@ -659,11 +719,10 @@ async def test_multi_model_review_dispatches_per_model_persona():
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await _do_multi_model_review("test prompt", get_review_system_prompt)
 
-    # Every model that ran should have received its expected persona prompt.
+    # Every panel member runs (no quorum cancellation) with its persona prompt.
     for name in ALL_REVIEW_MODELS:
         model_id = resolve_model(name)
-        if model_id not in captured:
-            continue  # may have been cancelled after min_results reached
+        assert model_id in captured, f"Model {name} never ran"
         assert captured[model_id] == get_review_system_prompt(name), (
             f"Model {name} did not receive its persona prompt"
         )
