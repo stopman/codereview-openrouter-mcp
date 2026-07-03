@@ -50,11 +50,15 @@ CodeReview MCP — multi-model code and plan review via OpenRouter.
 
 - `model="all"` (RECOMMENDED for important reviews): runs a 4-model panel with
   complementary personas — Gemini (architect), GPT-5.3 (detail-oriented),
-  Claude Opus 4.8 (first-principles / simplicity), Grok 4.3 (production/pragmatist).
+  Claude Fable 5 (first-principles / simplicity), Claude Opus 4.8
+  (production/pragmatist + security).
   Returns the panel's reviews as markdown; the caller (you) synthesizes.
 - Single model picks: `gemini` (default, fast architect lens), `openai`
   (detail), `claude` (first-principles simplicity, deepest reasoning),
-  `grok` (production/pragmatist, fast).
+  `opus` (production/pragmatist + security).
+- For security-focused reviews (`focus="security"`), prefer `opus`: the
+  `claude` slot runs Fable 5, whose dual-use safety measures may make it
+  decline security analysis.
 
 ## Attaching project documentation — IMPORTANT
 
@@ -214,8 +218,8 @@ async def _do_multi_model_review(
     pragmatist) rather than asking every model the same generic question.
 
     Returns Markdown with one section per successful panel reviewer. Synthesis
-    across the panel is left to the caller (typically Claude Opus invoking this
-    MCP), which already has the originating context.
+    across the panel is left to the caller (typically the Claude agent invoking
+    this MCP), which already has the originating context.
     """
     min_results = min(3, len(ALL_REVIEW_MODELS))
     log.info("Starting multi-model review across %d models (returning after %d): %s",
@@ -299,7 +303,7 @@ async def _prepare_diff(diff: str) -> str:
 
     Args:
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, grok, all
+        model: Model to use for review. Options: gemini, openai, claude, opus, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -351,7 +355,7 @@ async def review_diff(
     Args:
         repo_path: Path to the git repository (defaults to current directory)
         sha: Commit SHA to review (defaults to HEAD)
-        model: Model to use for review. Options: gemini, openai, claude, grok, all
+        model: Model to use for review. Options: gemini, openai, claude, opus, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -405,7 +409,7 @@ async def review_commit(
         repo_path: Path to the git repository (defaults to current directory)
         branch: Branch to review
         base: Base branch to compare against (defaults to main)
-        model: Model to use for review. Options: gemini, openai, claude, grok, all
+        model: Model to use for review. Options: gemini, openai, claude, opus, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -459,7 +463,7 @@ async def review_branch(
     Args:
         file_path: Path to the file relative to repo_path
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gemini, openai, claude, grok, all
+        model: Model to use for review. Options: gemini, openai, claude, opus, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -562,7 +566,7 @@ async def _do_plan_review(
     Args:
         plan: The plan or design document text to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gemini, openai, claude, grok, all
+        model: Model to use for review. Options: gemini, openai, claude, opus, all
         repo_path: Path to the git repository — required only if context_files is set
         context_files: Optional but recommended for plan reviews — paths
             (relative to repo_path) to markdown/text docs that ground the
@@ -612,7 +616,7 @@ async def review_plan(
     Args:
         plan: The plan, design document, or reasoning task to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gemini, openai, claude, grok, all
+        model: Model to use for review. Options: gemini, openai, claude, opus, all
         repo_path: Path to the git repository — required only if context_files is set
         context_files: Optional but recommended for plan reviews — paths
             (relative to repo_path) to markdown/text docs that ground the

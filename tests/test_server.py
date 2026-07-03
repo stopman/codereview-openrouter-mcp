@@ -208,10 +208,10 @@ def test_resolve_model_all_known_models():
         assert "/" in model_id, f"Model ID for '{name}' should contain a slash: {model_id}"
 
 
-def test_resolve_model_grok():
+def test_resolve_model_opus():
     from codereview_openrouter_mcp.models import resolve_model
 
-    assert resolve_model("grok") == "x-ai/grok-4.3"
+    assert resolve_model("opus") == "anthropic/claude-opus-4.8"
 
 
 def test_resolve_model_invalid():
@@ -230,15 +230,44 @@ def test_resolve_model_all_raises():
 
 
 def test_all_review_models_is_expected_panel():
-    """Lock in the panel composition: four US, ZDR-routable models, one per persona.
+    """Lock in the panel composition: four US models, one per persona.
 
-    Gemini=architect, GPT-5.3=detail, Opus=simplicity, Grok=pragmatist. The
+    Gemini=architect, GPT-5.3=detail, Fable=simplicity, Opus=pragmatist. The
     non-US members (DeepSeek, Kimi, GLM) and the Fusion meta-router were
-    removed; Grok 4.3 fills the pragmatist slot GLM used to hold.
+    removed. Grok 4.3 later gave way to Opus 4.8, which keeps security review
+    coverage on the panel since Fable 5 declines security-focused analysis.
     """
     from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
 
-    assert ALL_REVIEW_MODELS == ["gemini", "openai", "claude", "grok"]
+    assert ALL_REVIEW_MODELS == ["gemini", "openai", "claude", "opus"]
+
+
+def test_claude_slot_uses_fable_5():
+    """The claude slot runs Fable 5 (swapped in for Opus 4.8)."""
+    from codereview_openrouter_mcp.models import MODEL_DISPLAY_NAMES, MODELS
+
+    assert MODELS["claude"] == "anthropic/claude-fable-5"
+    assert MODEL_DISPLAY_NAMES["claude"] == "Claude Fable 5"
+
+
+def test_claude_slot_pins_zdr_exemption():
+    """Fable 5 has no ZDR endpoint on OpenRouter yet, so only the claude slot
+    pins provider.zdr=False; every other panel member keeps full ZDR routing."""
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS, get_model_extra_body
+    from codereview_openrouter_mcp.server import _compose_extra_body
+
+    assert get_model_extra_body("claude") == {"provider": {"zdr": False}}
+    for name in ALL_REVIEW_MODELS:
+        if name == "claude":
+            continue
+        assert "provider" not in get_model_extra_body(name), (
+            f"'{name}' should not pin provider routing"
+        )
+
+    # The composed request body must carry both the ZDR pin and reasoning config.
+    composed = _compose_extra_body("claude", use_reasoning=True)
+    assert composed["provider"] == {"zdr": False}
+    assert composed["reasoning"]["effort"] == "xhigh"
 
 
 def test_removed_models_absent_from_registry():
@@ -250,7 +279,7 @@ def test_removed_models_absent_from_registry():
     )
     from codereview_openrouter_mcp.prompts import PERSONA_MAP
 
-    for name in ("qwen", "deepseek", "kimi", "glm", "fusion"):
+    for name in ("qwen", "deepseek", "kimi", "glm", "fusion", "grok"):
         assert name not in MODELS, f"'{name}' still in MODELS"
         assert name not in MODEL_DISPLAY_NAMES, f"'{name}' still in MODEL_DISPLAY_NAMES"
         assert name not in REASONING_CONFIG, f"'{name}' still in REASONING_CONFIG"
@@ -306,11 +335,12 @@ def test_reasoning_config_gemini_uses_high():
     assert config["reasoning"]["effort"] == "high"
 
 
-def test_reasoning_config_grok_uses_high():
+def test_reasoning_config_opus_uses_xhigh_verbosity_max():
     from codereview_openrouter_mcp.models import get_reasoning_config
 
-    config = get_reasoning_config("grok")
-    assert config["reasoning"]["effort"] == "high"
+    config = get_reasoning_config("opus")
+    assert config["reasoning"]["effort"] == "xhigh"
+    assert config["verbosity"] == "max"
 
 
 # --- Multi-model review tests ---
@@ -348,8 +378,8 @@ async def test_multi_model_review_partial_failure():
     from codereview_openrouter_mcp.server import _do_multi_model_review
 
     async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
-        if "grok" in model_id:
-            raise Exception("Grok is down")
+        if "opus" in model_id:
+            raise Exception("Opus is down")
         await asyncio.sleep(0.01)
         return f"Review from {model_id}"
 
@@ -359,7 +389,7 @@ async def test_multi_model_review_partial_failure():
     # Should still have results from the other models
     assert "Gemini 3.5 Flash" in result
     assert "GPT-5.3 Codex" in result
-    assert "Claude Opus 4.8" in result
+    assert "Claude Fable 5" in result
     # Should note the failure
     assert "failed" in result.lower() or "error" in result.lower()
 
@@ -561,7 +591,7 @@ def test_persona_map_assigns_expected_personas():
     assert PERSONA_MAP["gemini"] == PERSONA_ARCHITECT
     assert PERSONA_MAP["openai"] == PERSONA_DETAIL
     assert PERSONA_MAP["claude"] == PERSONA_SIMPLICITY
-    assert PERSONA_MAP["grok"] == PERSONA_PRAGMATIST
+    assert PERSONA_MAP["opus"] == PERSONA_PRAGMATIST
 
 
 def test_get_review_system_prompt_returns_persona_specific():
@@ -571,7 +601,7 @@ def test_get_review_system_prompt_returns_persona_specific():
     architect = get_review_system_prompt("gemini")
     detail = get_review_system_prompt("openai")
     simplicity = get_review_system_prompt("claude")
-    pragmatist = get_review_system_prompt("grok")
+    pragmatist = get_review_system_prompt("opus")
 
     # Each should be distinct
     assert len({architect, detail, simplicity, pragmatist}) == 4
@@ -597,7 +627,7 @@ def test_get_plan_review_system_prompt_returns_persona_specific():
     architect = get_plan_review_system_prompt("gemini")
     detail = get_plan_review_system_prompt("openai")
     simplicity = get_plan_review_system_prompt("claude")
-    pragmatist = get_plan_review_system_prompt("grok")
+    pragmatist = get_plan_review_system_prompt("opus")
 
     assert len({architect, detail, simplicity, pragmatist}) == 4
     assert "Architect" in architect
@@ -658,9 +688,9 @@ async def test_review_diff_single_model_uses_persona_prompt(mock_ctx):
         patch("codereview_openrouter_mcp.server.get_working_diff", new_callable=AsyncMock, return_value="diff --git a/f.py\n+x"),
         patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review),
     ):
-        await review_diff(repo_path=".", model="grok", ctx=mock_ctx)
+        await review_diff(repo_path=".", model="opus", ctx=mock_ctx)
 
-    assert captured["system_prompt"] == get_review_system_prompt("grok")
+    assert captured["system_prompt"] == get_review_system_prompt("opus")
     # And it must be the pragmatist persona, not the generic default
     assert "Pragmatist" in captured["system_prompt"] or "Production" in captured["system_prompt"]
 
@@ -679,12 +709,35 @@ async def test_review_plan_single_model_uses_persona_prompt(mock_ctx):
         return "LGTM"
 
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
-        await review_plan(plan="Add caching layer", model="grok", ctx=mock_ctx)
+        await review_plan(plan="Add caching layer", model="opus", ctx=mock_ctx)
 
-    assert captured["system_prompt"] == get_plan_review_system_prompt("grok")
-    # Plan reviews run with reasoning enabled — grok is configured for high effort.
-    assert captured["extra_body"]["reasoning"]["effort"] == "high"
+    assert captured["system_prompt"] == get_plan_review_system_prompt("opus")
+    # Plan reviews run with reasoning enabled — opus is configured for xhigh effort.
+    assert captured["extra_body"]["reasoning"]["effort"] == "xhigh"
     assert "Pragmatist" in captured["system_prompt"] or "Production" in captured["system_prompt"]
+
+
+def test_pragmatist_persona_covers_security():
+    """Opus owns security-adjacent review: Fable 5's dual-use safety measures
+    make it decline security-focused analysis, so the pragmatist prompts it
+    runs must explicitly cover security exposure."""
+    from codereview_openrouter_mcp.prompts import (
+        PRAGMATIST_PLAN_REVIEW_SYSTEM_PROMPT,
+        PRAGMATIST_REVIEW_SYSTEM_PROMPT,
+    )
+
+    assert "Security" in PRAGMATIST_REVIEW_SYSTEM_PROMPT
+    assert "Security" in PRAGMATIST_PLAN_REVIEW_SYSTEM_PROMPT
+
+
+def test_server_instructions_steer_security_to_opus():
+    """Callers must be told to send security-focused reviews to opus, since
+    the fable-backed claude slot may decline dual-use security analysis."""
+    from codereview_openrouter_mcp.server import mcp
+
+    text = mcp.instructions.lower()
+    assert "security" in text
+    assert "opus" in text
 
 
 # --- server instructions tests ---

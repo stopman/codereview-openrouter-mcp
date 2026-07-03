@@ -9,8 +9,8 @@ from codereview_openrouter_mcp.models import MODELS, resolve_model
 def test_resolve_known_models():
     assert resolve_model("gemini") == "google/gemini-3.5-flash"
     assert resolve_model("openai") == "openai/gpt-5.3-codex"
-    assert resolve_model("claude") == "anthropic/claude-opus-4.8"
-    assert resolve_model("grok") == "x-ai/grok-4.3"
+    assert resolve_model("claude") == "anthropic/claude-fable-5"
+    assert resolve_model("opus") == "anthropic/claude-opus-4.8"
 
 
 def test_resolve_unknown_model():
@@ -105,6 +105,28 @@ async def test_zdr_can_be_disabled_via_settings():
     provider = kwargs["extra_body"]["provider"]
     assert "zdr" not in provider
     assert provider["data_collection"] == "deny"
+
+
+@pytest.mark.asyncio
+async def test_explicit_zdr_pin_survives_privacy_merge():
+    """A per-model provider.zdr pin (MODEL_EXTRA_BODY) must survive the merge.
+
+    Fable 5 has no ZDR endpoint on OpenRouter, so its slot pins zdr=False to
+    avoid a hard routing failure while the global default stays zdr=True.
+    """
+    extra = {"provider": {"zdr": False}}
+    kwargs = await _capture_create_kwargs(extra_body=extra)
+    provider = kwargs["extra_body"]["provider"]
+    assert provider["zdr"] is False  # explicit pin wins over the global default
+    assert provider["data_collection"] == "deny"  # privacy floor still applied
+
+
+@pytest.mark.asyncio
+async def test_data_collection_cannot_be_overridden():
+    """data_collection='deny' is the immutable privacy floor — no caller may relax it."""
+    extra = {"provider": {"data_collection": "allow"}}
+    kwargs = await _capture_create_kwargs(extra_body=extra)
+    assert kwargs["extra_body"]["provider"]["data_collection"] == "deny"
 
 
 # --- Retry tests ---

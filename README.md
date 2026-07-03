@@ -2,7 +2,7 @@
 
 An MCP server that gives your AI coding assistant access to **staff/principal-engineer-level code review** from the world's best LLMs — all through a single OpenRouter API key.
 
-Pick your reviewer per-request: **Gemini 3.5 Flash**, **GPT-5.3 Codex**, **Claude Opus 4.8**, or **Grok 4.3**. Compare opinions. Get a second (or third) opinion on your code before it ships.
+Pick your reviewer per-request: **Gemini 3.5 Flash**, **GPT-5.3 Codex**, **Claude Fable 5**, or **Claude Opus 4.8**. Compare opinions. Get a second (or third) opinion on your code before it ships.
 
 ## Why this exists
 
@@ -11,7 +11,7 @@ Your AI coding assistant writes code. But who reviews it?
 Other code review MCP servers lock you into one model, require multiple API keys, or don't actually do LLM-powered review at all. This one:
 
 - **One API key** (OpenRouter) gives you access to every major model
-- **You pick the reviewer** per-request — compare what Gemini thinks vs Claude vs OpenAI vs Grok
+- **You pick the reviewer** per-request — compare what Gemini thinks vs Claude vs OpenAI
 - **`model="all"`** fans out to all models in parallel and returns the first 3 responses — instant multi-perspective review
 - **Secrets are redacted** before your code leaves your machine (via [detect-secrets](https://github.com/Yelp/detect-secrets))
 - **Staff engineer prompt** — not generic "review this code" but a structured 6-dimension review covering security, architecture, edge cases, implementation, style, and abstractions
@@ -75,7 +75,7 @@ Once the MCP server is configured, just ask Claude Code in natural language. Her
 
 > "Review the feature/auth branch against main using Claude"
 
-> "Review this branch with Grok, focus on architecture"
+> "Review this branch with Opus, focus on security"
 
 #### Reviewing individual files
 
@@ -185,11 +185,11 @@ review_oracle(plan="We plan to...", codebase_context="", model="gemini")
 |---|---|---|
 | `gemini` | Google Gemini 3.5 Flash | Large diffs, fast turnaround |
 | `openai` | OpenAI GPT-5.3 Codex | Deep code understanding |
-| `claude` | Anthropic Claude Opus 4.8 | First-principles simplicity, deepest reasoning |
-| `grok` | xAI Grok 4.3 | Pragmatic production feedback, fast |
-| `all` | Panel: Gemini + GPT-5.3 + Claude Opus 4.8 + Grok 4.3 | Multi-perspective review |
+| `claude` | Anthropic Claude Fable 5 | First-principles simplicity, deepest reasoning |
+| `opus` | Anthropic Claude Opus 4.8 | Production pragmatism + security reviews |
+| `all` | Panel: Gemini + GPT-5.3 + Claude Fable 5 + Claude Opus 4.8 | Multi-perspective review |
 
-Pass `model="gemini"`, `model="openai"`, `model="claude"`, `model="grok"`, or `model="all"` to any tool. Default is `gemini`.
+Pass `model="gemini"`, `model="openai"`, `model="claude"`, `model="opus"`, or `model="all"` to any tool. Default is `gemini`.
 
 When `model="all"` is used, reviews are fanned out to all models concurrently. The server returns as soon as the first 3 responses arrive; slower models are cancelled.
 
@@ -277,7 +277,7 @@ This catches AWS keys, GitHub tokens, passwords, private keys, connection string
 | `MAX_DIFF_CHARS` | No | `500000` | Max characters before truncation |
 | `LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `ALLOWED_REPO_ROOTS` | No | — | Comma-separated list of allowed repository root paths. If unset, all repos are accessible |
-| `OPENROUTER_ZDR` | No | `true` | Route only to Zero-Data-Retention provider endpoints. Set `false` if a model has no ZDR endpoint and routing fails. `data_collection: "deny"` (no training on your data) is always enforced regardless |
+| `OPENROUTER_ZDR` | No | `true` | Route only to Zero-Data-Retention provider endpoints. Set `false` if a model has no ZDR endpoint and routing fails. The `claude` slot (Fable 5) has no ZDR endpoint yet and is individually exempted in `MODEL_EXTRA_BODY`. `data_collection: "deny"` (no training on your data) is always enforced regardless |
 
 ## Development
 
@@ -292,7 +292,7 @@ uv run pytest tests/ -v
 ```
 AI Assistant  -->  MCP Server  -->  detect-secrets (redact)  -->  OpenRouter API  -->  LLM(s)
                    (6 tools)        (scan & redact secrets)       (unified routing)    (Gemini/OpenAI/
-                       |                                                                Claude/Grok)
+                       |                                                                Claude/Opus)
                     git ops
                (diff/show/branch)
 ```

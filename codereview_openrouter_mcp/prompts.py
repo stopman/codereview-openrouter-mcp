@@ -207,6 +207,12 @@ Evaluate the change against these dimensions:
    - Memory, CPU, file descriptor, connection limits
    - Hot paths, repeated work, accidental N+1 patterns
 
+6. **Security Exposure**
+   - Injection risks (SQL, command, path traversal) at trust boundaries
+   - Secrets or credentials in code, config, or logs
+   - Missing authentication/authorization on new surfaces
+   - Unsafe deserialization, SSRF, dependency risks
+
 Rules:
 - Reference files and line numbers for every finding.
 - For each issue, suggest the operational mitigation (log line, metric, retry policy, config flag).
@@ -432,6 +438,7 @@ Evaluate the plan against these dimensions:
 3. **Debuggability** — when this breaks at 3am, will the on-call have what they need?
 4. **Deploy, Rollback, and Config** — is rollout staged? Is rollback possible? What new config / env vars are required?
 5. **Performance & Resource Use** — what is the realistic load? Where will it hurt under that load?
+6. **Security Exposure** — what attack surfaces does the plan introduce? Are trust boundaries, authn/authz, secrets handling, and dependency risks addressed?
 
 Rules:
 - For each concern, propose the operational mitigation (a specific log, metric, retry policy, or rollout step).
@@ -617,7 +624,7 @@ PERSONA_MAP: dict[str, str] = {
     "gemini": PERSONA_ARCHITECT,
     "openai": PERSONA_DETAIL,
     "claude": PERSONA_SIMPLICITY,
-    "grok": PERSONA_PRAGMATIST,
+    "opus": PERSONA_PRAGMATIST,
 }
 
 _REVIEW_PROMPTS_BY_PERSONA: dict[str, str] = {
