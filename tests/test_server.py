@@ -580,6 +580,28 @@ def test_fallback_models_cover_panel():
         )
 
 
+def test_fallbacks_are_cross_vendor():
+    """A slot's fallback must come from a different vendor than its primary,
+    so a vendor outage can't take out both. In particular, Anthropic-backed
+    slots (Fable 5, Opus 4.8) must fall back to Gemini."""
+    from codereview_openrouter_mcp.models import (
+        ALL_REVIEW_MODELS,
+        FALLBACK_MODELS,
+        resolve_model,
+    )
+
+    for name in ALL_REVIEW_MODELS:
+        primary_vendor = resolve_model(name).split("/")[0]
+        fallback_vendor = FALLBACK_MODELS[name].split("/")[0]
+        assert fallback_vendor != primary_vendor, (
+            f"Slot '{name}' falls back within its own vendor '{primary_vendor}'"
+        )
+        if primary_vendor == "anthropic":
+            assert fallback_vendor == "google", (
+                f"Anthropic slot '{name}' must fall back to Gemini, got {FALLBACK_MODELS[name]}"
+            )
+
+
 @pytest.mark.asyncio
 async def test_fallback_review_uses_clean_extra_body():
     """Fallback runs must not inherit the primary slot's extra_body.
