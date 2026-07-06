@@ -207,6 +207,12 @@ Evaluate the change against these dimensions:
    - Memory, CPU, file descriptor, connection limits
    - Hot paths, repeated work, accidental N+1 patterns
 
+6. **Security Exposure**
+   - Injection risks (SQL, command, path traversal) at trust boundaries
+   - Secrets or credentials in code, config, or logs
+   - Missing authentication/authorization on new surfaces
+   - Unsafe deserialization, SSRF, dependency risks
+
 Rules:
 - Reference files and line numbers for every finding.
 - For each issue, suggest the operational mitigation (log line, metric, retry policy, config flag).
@@ -432,6 +438,7 @@ Evaluate the plan against these dimensions:
 3. **Debuggability** — when this breaks at 3am, will the on-call have what they need?
 4. **Deploy, Rollback, and Config** — is rollout staged? Is rollback possible? What new config / env vars are required?
 5. **Performance & Resource Use** — what is the realistic load? Where will it hurt under that load?
+6. **Security Exposure** — what attack surfaces does the plan introduce? Are trust boundaries, authn/authz, secrets handling, and dependency risks addressed?
 
 Rules:
 - For each concern, propose the operational mitigation (a specific log, metric, retry policy, or rollout step).
@@ -612,16 +619,16 @@ PERSONA_ARCHITECT = "architect"
 PERSONA_DETAIL = "detail"
 PERSONA_SIMPLICITY = "simplicity"
 PERSONA_PRAGMATIST = "pragmatist"
+# The generalist runs the comprehensive default prompts — a fifth, breadth-
+# first perspective alongside the four specialist lenses.
+PERSONA_GENERALIST = "generalist"
 
 PERSONA_MAP: dict[str, str] = {
-    "gemini": PERSONA_ARCHITECT,
+    "gpt55": PERSONA_ARCHITECT,
     "openai": PERSONA_DETAIL,
-    "claude": PERSONA_DETAIL,
-    "deepseek": PERSONA_SIMPLICITY,
-    "qwen": PERSONA_SIMPLICITY,
-    "kimi": PERSONA_PRAGMATIST,
-    "glm": PERSONA_PRAGMATIST,
-    "fusion": PERSONA_PRAGMATIST,
+    "claude": PERSONA_SIMPLICITY,
+    "opus": PERSONA_PRAGMATIST,
+    "glm": PERSONA_GENERALIST,
 }
 
 _REVIEW_PROMPTS_BY_PERSONA: dict[str, str] = {
@@ -629,6 +636,7 @@ _REVIEW_PROMPTS_BY_PERSONA: dict[str, str] = {
     PERSONA_DETAIL: DETAIL_REVIEW_SYSTEM_PROMPT,
     PERSONA_SIMPLICITY: SIMPLICITY_REVIEW_SYSTEM_PROMPT,
     PERSONA_PRAGMATIST: PRAGMATIST_REVIEW_SYSTEM_PROMPT,
+    PERSONA_GENERALIST: REVIEW_SYSTEM_PROMPT,
 }
 
 _PLAN_REVIEW_PROMPTS_BY_PERSONA: dict[str, str] = {
@@ -636,6 +644,7 @@ _PLAN_REVIEW_PROMPTS_BY_PERSONA: dict[str, str] = {
     PERSONA_DETAIL: DETAIL_PLAN_REVIEW_SYSTEM_PROMPT,
     PERSONA_SIMPLICITY: SIMPLICITY_PLAN_REVIEW_SYSTEM_PROMPT,
     PERSONA_PRAGMATIST: PRAGMATIST_PLAN_REVIEW_SYSTEM_PROMPT,
+    PERSONA_GENERALIST: PLAN_REVIEW_SYSTEM_PROMPT,
 }
 
 

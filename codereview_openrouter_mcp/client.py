@@ -35,7 +35,10 @@ def _merge_extra_body(extra_body: dict | None) -> dict:
     """Inject the privacy provider block without clobbering caller config.
 
     Deep-merges into any existing `provider` sub-dict so reasoning/verbosity
-    settings and any future provider preferences are preserved.
+    settings and any future provider preferences are preserved. The privacy
+    block always wins: neither `data_collection: "deny"` nor (when enabled)
+    `zdr: true` can be weakened by any caller or per-model config — strict
+    ZDR, no exemptions, so every routed model must be ZDR-routable.
     """
     merged = dict(extra_body) if extra_body else {}
     provider = dict(merged.get("provider") or {})

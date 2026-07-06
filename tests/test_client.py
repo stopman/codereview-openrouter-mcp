@@ -7,11 +7,10 @@ from codereview_openrouter_mcp.models import MODELS, resolve_model
 
 
 def test_resolve_known_models():
-    assert resolve_model("gemini") == "google/gemini-3.5-flash"
+    assert resolve_model("gpt55") == "openai/gpt-5.5"
     assert resolve_model("openai") == "openai/gpt-5.3-codex"
-    assert resolve_model("claude") == "anthropic/claude-opus-4.8"
-    assert resolve_model("glm") == "z-ai/glm-5.2"
-    assert resolve_model("fusion") == "openrouter/fusion"
+    assert resolve_model("claude") == "anthropic/claude-sonnet-5"
+    assert resolve_model("opus") == "anthropic/claude-opus-4.8"
 
 
 def test_resolve_unknown_model():
@@ -106,6 +105,28 @@ async def test_zdr_can_be_disabled_via_settings():
     provider = kwargs["extra_body"]["provider"]
     assert "zdr" not in provider
     assert provider["data_collection"] == "deny"
+
+
+@pytest.mark.asyncio
+async def test_caller_cannot_weaken_zdr():
+    """Strict ZDR: an explicit caller provider.zdr=False must be overridden.
+
+    There are no per-model ZDR exemptions — every panel model must be
+    ZDR-routable, and the privacy block always wins the merge.
+    """
+    extra = {"provider": {"zdr": False}}
+    kwargs = await _capture_create_kwargs(extra_body=extra)
+    provider = kwargs["extra_body"]["provider"]
+    assert provider["zdr"] is True  # privacy block wins; no exemptions
+    assert provider["data_collection"] == "deny"
+
+
+@pytest.mark.asyncio
+async def test_data_collection_cannot_be_overridden():
+    """data_collection='deny' is the immutable privacy floor — no caller may relax it."""
+    extra = {"provider": {"data_collection": "allow"}}
+    kwargs = await _capture_create_kwargs(extra_body=extra)
+    assert kwargs["extra_body"]["provider"]["data_collection"] == "deny"
 
 
 # --- Retry tests ---

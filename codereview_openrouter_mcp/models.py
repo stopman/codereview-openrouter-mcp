@@ -1,63 +1,107 @@
 from copy import deepcopy
 
 MODELS: dict[str, str] = {
-    "gemini": "google/gemini-3.5-flash",
+    "gpt55": "openai/gpt-5.5",
     "openai": "openai/gpt-5.3-codex",
-    "claude": "anthropic/claude-opus-4.8",
-    "deepseek": "deepseek/deepseek-v4-pro",
-    "qwen": "qwen/qwen3.7-max",
-    "kimi": "moonshotai/kimi-k2.6",
+    "claude": "anthropic/claude-sonnet-5",
+    "opus": "anthropic/claude-opus-4.8",
     "glm": "z-ai/glm-5.2",
-    "fusion": "openrouter/fusion",
 }
 
-DEFAULT_MODEL = "gemini"
+DEFAULT_MODEL = "gpt55"
 
-# Models to use when model="all" for parallel multi-model review.
-# All four are fast single models so the latency race is fair (the slowest
-# straggler is dropped by min_results). GLM-5.2 fills the pragmatist persona
-# slot (see PERSONA_MAP). Fusion is intentionally excluded from the panel:
-# it is itself a multi-model deliberation, so it is structurally the slowest
-# member and would almost always be the one cancelled — wasting a composite
-# call while rarely contributing a review. It remains available via
-# model="fusion".
-ALL_REVIEW_MODELS = ["gemini", "openai", "qwen", "glm"]
+# Models to use when model="all" for parallel multi-model review. Each fills
+# a distinct persona slot (see PERSONA_MAP): GPT-5.5=architect,
+# GPT-5.3=detail, Sonnet 5=simplicity, Opus=pragmatist (production +
+# security), GLM 5.2=generalist. STRICT ZDR: every panel model must be
+# ZDR-routable on OpenRouter — the client sends provider.zdr=true and always
+# overrides any attempt to weaken it (see client._merge_extra_body), so a
+# model with no ZDR endpoint hard-fails routing and cannot sit on the panel.
+# That is why Claude Fable 5 and GPT-5.5 Pro are absent: neither has a ZDR
+# endpoint. DeepSeek, Kimi, and the Fusion meta-router remain excluded.
+# GLM 5.2 (a Z.ai model) is allowed only because its slot pins a US-based
+# provider allowlist (see MODEL_EXTRA_BODY) on top of ZDR — verified live:
+# OpenRouter routes it via Novita (US) under both constraints. Grok 4.3 gave
+# way to Opus 4.8 so a member explicitly owns security review.
+# model="all" waits for every member; a member that errors out is covered by
+# its FALLBACK_MODELS entry so no persona goes missing. Panel wall-clock
+# time is set by the slowest reviewer.
+ALL_REVIEW_MODELS = ["gpt55", "openai", "claude", "opus", "glm"]
+
+# Fallback for each panel slot when its primary model errors out. Cross-vendor
+# so a provider outage doesn't take primary and fallback down together; both
+# fallbacks are cheap, fast, and ZDR-routable. Fallback runs send no per-model
+# extra body (no reasoning tuning, no provider pins) so they always get the
+# client's full default privacy routing.
+FALLBACK_MODELS: dict[str, str] = {
+    "gpt55": "anthropic/claude-haiku-4.5",
+    "openai": "anthropic/claude-haiku-4.5",
+    "claude": "google/gemini-3.5-flash",
+    "opus": "google/gemini-3.5-flash",
+    "glm": "anthropic/claude-haiku-4.5",
+}
+
+# Display names for fallback model ids (keyed by id, unlike
+# MODEL_DISPLAY_NAMES which is keyed by panel slot name).
+FALLBACK_DISPLAY_NAMES: dict[str, str] = {
+    "anthropic/claude-haiku-4.5": "Claude Haiku 4.5",
+    "google/gemini-3.5-flash": "Gemini 3.5 Flash",
+}
 
 # Display names for multi-model output headers
 MODEL_DISPLAY_NAMES: dict[str, str] = {
-    "gemini": "Gemini 3.5 Flash",
+    "gpt55": "GPT-5.5",
     "openai": "GPT-5.3 Codex",
-    "claude": "Claude Opus 4.8",
-    "deepseek": "DeepSeek V4 Pro",
-    "qwen": "Qwen3.7 Max",
-    "kimi": "Kimi K2.6",
-    "glm": "GLM-5.2",
-    "fusion": "Fusion (Budget)",
+    "claude": "Claude Sonnet 5",
+    "opus": "Claude Opus 4.8",
+    "glm": "GLM 5.2",
 }
 
-# Per-model always-on request body additions.
-# `fusion` is configured to use the curated budget panel via preset slug.
+# Per-model always-on request body additions — an extension point for
+# NON-PRIVACY provider/plugin preferences only. Privacy keys cannot be
+# pinned here: client._merge_extra_body always overrides them (strict ZDR,
+# no per-model exemptions), so every panel model must be ZDR-routable
+# outright.
+# GLM 5.2 is developed by Z.ai (non-US), so its slot restricts routing to
+# US-headquartered hosting providers (per OpenRouter's provider registry)
+# via provider.only; combined with the injected zdr=true this routes to
+# US-based Zero-Data-Retention endpoints only.
+US_GLM_PROVIDER_ALLOWLIST = [
+    "deepinfra",
+    "fireworks",
+    "together",
+    "cloudflare",
+    "venice",
+    "wandb",
+    "parasail",
+    "novita",
+    "gmicloud",
+    "atlas-cloud",
+    "morph",
+]
+
+# Within the allowlist, prefer the major US hosts first (all verified live as
+# ZDR-qualified for GLM 5.2); OpenRouter falls back to the remaining
+# allowlisted ZDR endpoints automatically.
+US_GLM_PROVIDER_ORDER = ["together", "fireworks", "novita"]
+
 MODEL_EXTRA_BODY: dict[str, dict] = {
-    "fusion": {
-        "plugins": [
-            {
-                "id": "fusion",
-                "preset": "general-budget",
-            },
-        ],
+    "glm": {
+        "provider": {
+            "only": US_GLM_PROVIDER_ALLOWLIST,
+            "order": US_GLM_PROVIDER_ORDER,
+        }
     },
 }
 
 # Per-model reasoning configuration for maximum effort via OpenRouter.
+# The GPT slots do not support the verbosity parameter, only reasoning effort.
 REASONING_CONFIG: dict[str, dict] = {
-    "gemini": {"reasoning": {"effort": "high"}},
+    "gpt55": {"reasoning": {"effort": "xhigh"}},
     "openai": {"reasoning": {"effort": "xhigh"}},
     "claude": {"reasoning": {"effort": "xhigh"}, "verbosity": "max"},
-    "deepseek": {"reasoning": {"enabled": True}},
-    "qwen": {"reasoning": {"enabled": True}},
-    "kimi": {"reasoning": {"enabled": True}},
-    "glm": {"reasoning": {"enabled": True}},
-    "fusion": {"reasoning": {"enabled": True}},
+    "opus": {"reasoning": {"effort": "xhigh"}, "verbosity": "max"},
+    "glm": {"reasoning": {"effort": "xhigh"}},
 }
 
 
