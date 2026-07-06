@@ -280,7 +280,7 @@ This catches AWS keys, GitHub tokens, passwords, private keys, connection string
 | `MAX_DIFF_CHARS` | No | `500000` | Max characters before truncation |
 | `LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `ALLOWED_REPO_ROOTS` | No | — | Comma-separated list of allowed repository root paths. If unset, all repos are accessible |
-| `OPENROUTER_ZDR` | No | `true` | Route only to Zero-Data-Retention provider endpoints. Strict ZDR is the default and cannot be weakened per-model: every panel model is ZDR-routable, and requests always carry `zdr: true` unless this env var disables it globally. GLM 5.2 additionally routes only to US-headquartered providers via a `provider.only` allowlist. `data_collection: "deny"` (no training on your data) is always enforced regardless |
+| `OPENROUTER_ZDR` | No | `true` | Route only to Zero-Data-Retention provider endpoints. Strict ZDR is the default and cannot be weakened per-model: every panel model is ZDR-routable, and requests always carry `zdr: true` unless this env var disables it globally. GLM 5.2 additionally routes only to US-headquartered providers via a `provider.only` allowlist, preferring Together → Fireworks → Novita (`provider.order`) with the rest of the allowlist as fallback. `data_collection: "deny"` (no training on your data) is always enforced regardless |
 
 ## Development
 

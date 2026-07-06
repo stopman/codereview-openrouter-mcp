@@ -281,10 +281,17 @@ def test_glm_slot_pins_us_provider_allowlist():
     assert MODELS["glm"] == "z-ai/glm-5.2"
     assert MODEL_DISPLAY_NAMES["glm"] == "GLM 5.2"
 
-    allowlist = get_model_extra_body("glm")["provider"]["only"]
+    provider = get_model_extra_body("glm")["provider"]
+    allowlist = provider["only"]
     assert allowlist, "GLM slot must pin a US provider allowlist"
     for banned in ("z-ai", "baidu", "alibaba", "siliconflow", "streamlake"):
         assert banned not in allowlist, f"non-US provider '{banned}' in GLM allowlist"
+
+    # Preference order: try the major US hosts first (verified ZDR-qualified),
+    # with the rest of the allowlist as automatic fallback.
+    order = provider["order"]
+    assert order[0] == "together"
+    assert set(order) <= set(allowlist), "order must be a subset of the allowlist"
 
 
 def test_glm_mapped_to_generalist_persona():

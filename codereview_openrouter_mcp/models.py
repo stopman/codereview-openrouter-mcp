@@ -80,8 +80,18 @@ US_GLM_PROVIDER_ALLOWLIST = [
     "morph",
 ]
 
+# Within the allowlist, prefer the major US hosts first (all verified live as
+# ZDR-qualified for GLM 5.2); OpenRouter falls back to the remaining
+# allowlisted ZDR endpoints automatically.
+US_GLM_PROVIDER_ORDER = ["together", "fireworks", "novita"]
+
 MODEL_EXTRA_BODY: dict[str, dict] = {
-    "glm": {"provider": {"only": US_GLM_PROVIDER_ALLOWLIST}},
+    "glm": {
+        "provider": {
+            "only": US_GLM_PROVIDER_ALLOWLIST,
+            "order": US_GLM_PROVIDER_ORDER,
+        }
+    },
 }
 
 # Per-model reasoning configuration for maximum effort via OpenRouter.
