@@ -1,33 +1,32 @@
 from copy import deepcopy
 
 MODELS: dict[str, str] = {
-    "gptpro": "openai/gpt-5.5-pro",
+    "gpt55": "openai/gpt-5.5",
     "openai": "openai/gpt-5.3-codex",
-    "claude": "anthropic/claude-fable-5",
+    "claude": "anthropic/claude-sonnet-5",
     "opus": "anthropic/claude-opus-4.8",
+    "glm": "z-ai/glm-5.2",
 }
 
-DEFAULT_MODEL = "gptpro"
+DEFAULT_MODEL = "gpt55"
 
 # Models to use when model="all" for parallel multi-model review. Each fills
-# a distinct persona slot (see PERSONA_MAP): GPT-5.5 Pro=architect,
-# GPT-5.3=detail, Fable=simplicity, Opus=pragmatist (production + security).
-# All four are US-hosted. The client sends provider.zdr=true by default (see
-# client._privacy_provider), and a model with no ZDR endpoint hard-fails
-# routing — Fable 5 and GPT-5.5 Pro have no ZDR endpoint on OpenRouter yet,
-# so those slots pin provider.zdr=false via MODEL_EXTRA_BODY; drop each pin
-# once OpenRouter adds an endpoint. The prior non-US members (DeepSeek, Kimi,
-# GLM) and the Fusion meta-router were removed entirely; Grok 4.3 was later
-# replaced by Opus 4.8 because Fable 5's dual-use safety measures make it
-# decline security-focused review work, so the panel needs a member that owns
-# security; Gemini 3.5 Flash later gave way to GPT-5.5 Pro in the architect
-# slot (Gemini Flash remains as the fallback for the Anthropic slots).
+# a distinct persona slot (see PERSONA_MAP): GPT-5.5=architect,
+# GPT-5.3=detail, Sonnet 5=simplicity, Opus=pragmatist (production +
+# security), GLM 5.2=generalist. STRICT ZDR: every panel model must be
+# ZDR-routable on OpenRouter — the client sends provider.zdr=true and always
+# overrides any attempt to weaken it (see client._merge_extra_body), so a
+# model with no ZDR endpoint hard-fails routing and cannot sit on the panel.
+# That is why Claude Fable 5 and GPT-5.5 Pro are absent: neither has a ZDR
+# endpoint. DeepSeek, Kimi, and the Fusion meta-router remain excluded.
+# GLM 5.2 (a Z.ai model) is allowed only because its slot pins a US-based
+# provider allowlist (see MODEL_EXTRA_BODY) on top of ZDR — verified live:
+# OpenRouter routes it via Novita (US) under both constraints. Grok 4.3 gave
+# way to Opus 4.8 so a member explicitly owns security review.
 # model="all" waits for every member; a member that errors out is covered by
-# its FALLBACK_MODELS entry so no persona goes missing. Caveat: GPT-5.5 Pro
-# ($30/M in, $180/M out) is by far the priciest member, ahead of Fable 5
-# ($10/M in, $50/M out) and Opus 4.8 ($5/M in, $25/M out), and panel
-# wall-clock time is set by the slowest reviewer.
-ALL_REVIEW_MODELS = ["gptpro", "openai", "claude", "opus"]
+# its FALLBACK_MODELS entry so no persona goes missing. Panel wall-clock
+# time is set by the slowest reviewer.
+ALL_REVIEW_MODELS = ["gpt55", "openai", "claude", "opus", "glm"]
 
 # Fallback for each panel slot when its primary model errors out. Cross-vendor
 # so a provider outage doesn't take primary and fallback down together; both
@@ -35,10 +34,11 @@ ALL_REVIEW_MODELS = ["gptpro", "openai", "claude", "opus"]
 # extra body (no reasoning tuning, no provider pins) so they always get the
 # client's full default privacy routing.
 FALLBACK_MODELS: dict[str, str] = {
-    "gptpro": "anthropic/claude-haiku-4.5",
+    "gpt55": "anthropic/claude-haiku-4.5",
     "openai": "anthropic/claude-haiku-4.5",
     "claude": "google/gemini-3.5-flash",
     "opus": "google/gemini-3.5-flash",
+    "glm": "anthropic/claude-haiku-4.5",
 }
 
 # Display names for fallback model ids (keyed by id, unlike
@@ -50,32 +50,48 @@ FALLBACK_DISPLAY_NAMES: dict[str, str] = {
 
 # Display names for multi-model output headers
 MODEL_DISPLAY_NAMES: dict[str, str] = {
-    "gptpro": "GPT-5.5 Pro",
+    "gpt55": "GPT-5.5",
     "openai": "GPT-5.3 Codex",
-    "claude": "Claude Fable 5",
+    "claude": "Claude Sonnet 5",
     "opus": "Claude Opus 4.8",
+    "glm": "GLM 5.2",
 }
 
-# Per-model always-on request body additions. Fable 5 and GPT-5.5 Pro pin
-# provider.zdr=false because they have no Zero-Data-Retention endpoint on
-# OpenRouter yet, and the client's default zdr=true would hard-fail routing
-# for them. The immutable data_collection="deny" floor still applies (see
-# client._merge_extra_body), so providers may not collect or train on our
-# code — they just aren't held to zero retention for these slots. Remove each
-# pin once OpenRouter lists a ZDR endpoint for the model.
+# Per-model always-on request body additions — an extension point for
+# NON-PRIVACY provider/plugin preferences only. Privacy keys cannot be
+# pinned here: client._merge_extra_body always overrides them (strict ZDR,
+# no per-model exemptions), so every panel model must be ZDR-routable
+# outright.
+# GLM 5.2 is developed by Z.ai (non-US), so its slot restricts routing to
+# US-headquartered hosting providers (per OpenRouter's provider registry)
+# via provider.only; combined with the injected zdr=true this routes to
+# US-based Zero-Data-Retention endpoints only.
+US_GLM_PROVIDER_ALLOWLIST = [
+    "deepinfra",
+    "fireworks",
+    "together",
+    "cloudflare",
+    "venice",
+    "wandb",
+    "parasail",
+    "novita",
+    "gmicloud",
+    "atlas-cloud",
+    "morph",
+]
+
 MODEL_EXTRA_BODY: dict[str, dict] = {
-    "claude": {"provider": {"zdr": False}},
-    "gptpro": {"provider": {"zdr": False}},
+    "glm": {"provider": {"only": US_GLM_PROVIDER_ALLOWLIST}},
 }
 
 # Per-model reasoning configuration for maximum effort via OpenRouter.
-# GPT-5.5 Pro does not support the verbosity parameter, only reasoning effort
-# (medium/high/xhigh, reasoning mandatory).
+# The GPT slots do not support the verbosity parameter, only reasoning effort.
 REASONING_CONFIG: dict[str, dict] = {
-    "gptpro": {"reasoning": {"effort": "xhigh"}},
+    "gpt55": {"reasoning": {"effort": "xhigh"}},
     "openai": {"reasoning": {"effort": "xhigh"}},
     "claude": {"reasoning": {"effort": "xhigh"}, "verbosity": "max"},
     "opus": {"reasoning": {"effort": "xhigh"}, "verbosity": "max"},
+    "glm": {"reasoning": {"effort": "xhigh"}},
 }
 
 
