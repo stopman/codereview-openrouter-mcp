@@ -113,7 +113,7 @@ async def test_review_plan_redacts_secrets_in_plan(mock_ctx):
         patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM"),
     ):
         mock_redact.return_value = ("Use this key: ***", [{"type": "AWS Access Key", "line_number": 1}])
-        result = await review_plan(plan=plan_with_secret, model="gemini", ctx=mock_ctx)
+        result = await review_plan(plan=plan_with_secret, model="gptpro", ctx=mock_ctx)
 
     # redact_secrets must have been called with the plan text
     mock_redact.assert_called()
@@ -139,7 +139,7 @@ async def test_review_plan_redacts_secrets_in_codebase_context(mock_ctx):
             ("clean plan", []),
             ("***", [{"type": "GitHub Token", "line_number": 1}]),
         ]
-        await review_plan(plan="clean plan", codebase_context=context_with_secret, model="gemini", ctx=mock_ctx)
+        await review_plan(plan="clean plan", codebase_context=context_with_secret, model="gptpro", ctx=mock_ctx)
 
     assert mock_redact.call_count == 2, "redact_secrets should be called for both plan and codebase_context"
 
@@ -153,7 +153,7 @@ async def test_review_plan_secret_never_reaches_llm(mock_ctx):
     plan_with_secret = f"Deploy with key {fake_aws_key} to prod"
 
     with patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM") as mock_get_review:
-        await review_plan(plan=plan_with_secret, model="gemini", ctx=mock_ctx)
+        await review_plan(plan=plan_with_secret, model="gptpro", ctx=mock_ctx)
 
     # Check that the prompt sent to the LLM does NOT contain the raw key
     prompt_sent = mock_get_review.call_args[0][0]  # first positional arg
@@ -232,14 +232,14 @@ def test_resolve_model_all_raises():
 def test_all_review_models_is_expected_panel():
     """Lock in the panel composition: four US models, one per persona.
 
-    Gemini=architect, GPT-5.3=detail, Fable=simplicity, Opus=pragmatist. The
+    GPT-5.5 Pro=architect, GPT-5.3=detail, Fable=simplicity, Opus=pragmatist. The
     non-US members (DeepSeek, Kimi, GLM) and the Fusion meta-router were
     removed. Grok 4.3 later gave way to Opus 4.8, which keeps security review
     coverage on the panel since Fable 5 declines security-focused analysis.
     """
     from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
 
-    assert ALL_REVIEW_MODELS == ["gemini", "openai", "claude", "opus"]
+    assert ALL_REVIEW_MODELS == ["gptpro", "openai", "claude", "opus"]
 
 
 def test_claude_slot_uses_fable_5():
@@ -250,24 +250,28 @@ def test_claude_slot_uses_fable_5():
     assert MODEL_DISPLAY_NAMES["claude"] == "Claude Fable 5"
 
 
-def test_claude_slot_pins_zdr_exemption():
-    """Fable 5 has no ZDR endpoint on OpenRouter yet, so only the claude slot
-    pins provider.zdr=False; every other panel member keeps full ZDR routing."""
+def test_zdr_exempt_slots_pin_provider_routing():
+    """Fable 5 and GPT-5.5 Pro have no ZDR endpoint on OpenRouter yet, so only
+    those slots pin provider.zdr=False; every other panel member keeps full
+    ZDR routing."""
     from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS, get_model_extra_body
     from codereview_openrouter_mcp.server import _compose_extra_body
 
-    assert get_model_extra_body("claude") == {"provider": {"zdr": False}}
+    exempt = {"claude", "gptpro"}
+    for name in exempt:
+        assert get_model_extra_body(name) == {"provider": {"zdr": False}}
     for name in ALL_REVIEW_MODELS:
-        if name == "claude":
+        if name in exempt:
             continue
         assert "provider" not in get_model_extra_body(name), (
             f"'{name}' should not pin provider routing"
         )
 
     # The composed request body must carry both the ZDR pin and reasoning config.
-    composed = _compose_extra_body("claude", use_reasoning=True)
-    assert composed["provider"] == {"zdr": False}
-    assert composed["reasoning"]["effort"] == "xhigh"
+    for name in exempt:
+        composed = _compose_extra_body(name, use_reasoning=True)
+        assert composed["provider"] == {"zdr": False}
+        assert composed["reasoning"]["effort"] == "xhigh"
 
 
 def test_removed_models_absent_from_registry():
@@ -279,7 +283,7 @@ def test_removed_models_absent_from_registry():
     )
     from codereview_openrouter_mcp.prompts import PERSONA_MAP
 
-    for name in ("qwen", "deepseek", "kimi", "glm", "fusion", "grok"):
+    for name in ("qwen", "deepseek", "kimi", "glm", "fusion", "grok", "gemini"):
         assert name not in MODELS, f"'{name}' still in MODELS"
         assert name not in MODEL_DISPLAY_NAMES, f"'{name}' still in MODEL_DISPLAY_NAMES"
         assert name not in REASONING_CONFIG, f"'{name}' still in REASONING_CONFIG"
@@ -328,11 +332,11 @@ def test_reasoning_config_claude_uses_verbosity_max():
     assert config["reasoning"]["effort"] == "xhigh"
 
 
-def test_reasoning_config_gemini_uses_high():
+def test_reasoning_config_gptpro_uses_xhigh():
     from codereview_openrouter_mcp.models import get_reasoning_config
 
-    config = get_reasoning_config("gemini")
-    assert config["reasoning"]["effort"] == "high"
+    config = get_reasoning_config("gptpro")
+    assert config["reasoning"]["effort"] == "xhigh"
 
 
 def test_reasoning_config_opus_uses_xhigh_verbosity_max():
@@ -389,7 +393,7 @@ async def test_multi_model_review_partial_failure_uses_fallback():
         result = await _do_multi_model_review("test prompt", _fixed_prompt_fn("system prompt"))
 
     # The other members still report normally
-    assert "Gemini 3.5 Flash" in result
+    assert "GPT-5.5 Pro" in result
     assert "GPT-5.3 Codex" in result
     assert "Claude Fable 5" in result
     # The pragmatist slot is covered by the fallback, disclosed in the header
@@ -445,8 +449,8 @@ async def test_review_oracle_works_like_review_plan(mock_ctx):
     from codereview_openrouter_mcp.server import review_oracle, review_plan
 
     with patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM"):
-        plan_result = await review_plan(plan="Add caching layer", model="gemini", ctx=mock_ctx)
-        oracle_result = await review_oracle(plan="Add caching layer", model="gemini", ctx=mock_ctx)
+        plan_result = await review_plan(plan="Add caching layer", model="gptpro", ctx=mock_ctx)
+        oracle_result = await review_oracle(plan="Add caching layer", model="gptpro", ctx=mock_ctx)
 
     assert plan_result == oracle_result
 
@@ -533,7 +537,7 @@ async def test_review_plan_all_uses_multi_model(mock_ctx):
         result = await review_plan(plan="Add auth", model="all", ctx=mock_ctx)
 
     assert len(call_models) == 4
-    assert "Gemini 3.5 Flash" in result
+    assert "GPT-5.5 Pro" in result
     assert "GPT-5.3 Codex" in result
 
 
@@ -670,7 +674,7 @@ def test_persona_map_assigns_expected_personas():
         PERSONA_SIMPLICITY,
     )
 
-    assert PERSONA_MAP["gemini"] == PERSONA_ARCHITECT
+    assert PERSONA_MAP["gptpro"] == PERSONA_ARCHITECT
     assert PERSONA_MAP["openai"] == PERSONA_DETAIL
     assert PERSONA_MAP["claude"] == PERSONA_SIMPLICITY
     assert PERSONA_MAP["opus"] == PERSONA_PRAGMATIST
@@ -680,7 +684,7 @@ def test_get_review_system_prompt_returns_persona_specific():
     """Each model should get its persona's distinctive prompt content."""
     from codereview_openrouter_mcp.prompts import get_review_system_prompt
 
-    architect = get_review_system_prompt("gemini")
+    architect = get_review_system_prompt("gptpro")
     detail = get_review_system_prompt("openai")
     simplicity = get_review_system_prompt("claude")
     pragmatist = get_review_system_prompt("opus")
@@ -706,7 +710,7 @@ def test_get_plan_review_system_prompt_returns_persona_specific():
     """Plan-review prompts must also be persona-specific."""
     from codereview_openrouter_mcp.prompts import get_plan_review_system_prompt
 
-    architect = get_plan_review_system_prompt("gemini")
+    architect = get_plan_review_system_prompt("gptpro")
     detail = get_plan_review_system_prompt("openai")
     simplicity = get_plan_review_system_prompt("claude")
     pragmatist = get_plan_review_system_prompt("opus")
@@ -924,7 +928,7 @@ async def test_review_diff_injects_context_files_into_prompt(mock_ctx, tmp_path)
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await review_diff(
             repo_path=str(tmp_path),
-            model="gemini",
+            model="gptpro",
             context_files=["ARCH.md"],
             ctx=mock_ctx,
         )
@@ -950,7 +954,7 @@ async def test_review_plan_injects_context_files_into_prompt(mock_ctx, tmp_path)
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await review_plan(
             plan="Add an LRU cache to the user service",
-            model="gemini",
+            model="gptpro",
             repo_path=str(tmp_path),
             context_files=["VISION.md"],
             ctx=mock_ctx,
@@ -986,7 +990,7 @@ async def test_review_diff_redacts_secrets_in_context_files(mock_ctx, tmp_path):
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await review_diff(
             repo_path=str(tmp_path),
-            model="gemini",
+            model="gptpro",
             context_files=["DEPLOY.md"],
             ctx=mock_ctx,
         )
@@ -1019,7 +1023,7 @@ async def test_review_diff_missing_context_file_surfaces_notice(mock_ctx, tmp_pa
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await review_diff(
             repo_path=str(tmp_path),
-            model="gemini",
+            model="gptpro",
             context_files=["ARCH_THAT_DOESNT_EXIST.md"],
             ctx=mock_ctx,
         )

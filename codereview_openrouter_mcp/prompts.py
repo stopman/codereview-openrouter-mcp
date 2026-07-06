@@ -621,7 +621,7 @@ PERSONA_SIMPLICITY = "simplicity"
 PERSONA_PRAGMATIST = "pragmatist"
 
 PERSONA_MAP: dict[str, str] = {
-    "gemini": PERSONA_ARCHITECT,
+    "gptpro": PERSONA_ARCHITECT,
     "openai": PERSONA_DETAIL,
     "claude": PERSONA_SIMPLICITY,
     "opus": PERSONA_PRAGMATIST,

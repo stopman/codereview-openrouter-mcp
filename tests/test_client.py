@@ -7,7 +7,7 @@ from codereview_openrouter_mcp.models import MODELS, resolve_model
 
 
 def test_resolve_known_models():
-    assert resolve_model("gemini") == "google/gemini-3.5-flash"
+    assert resolve_model("gptpro") == "openai/gpt-5.5-pro"
     assert resolve_model("openai") == "openai/gpt-5.3-codex"
     assert resolve_model("claude") == "anthropic/claude-fable-5"
     assert resolve_model("opus") == "anthropic/claude-opus-4.8"
