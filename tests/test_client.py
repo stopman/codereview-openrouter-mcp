@@ -7,10 +7,17 @@ from codereview_openrouter_mcp.models import MODELS, resolve_model
 
 
 def test_resolve_known_models():
-    assert resolve_model("gpt55") == "openai/gpt-5.5"
+    assert resolve_model("gpt56") == "openai/gpt-5.6-sol"
     assert resolve_model("openai") == "openai/gpt-5.3-codex"
     assert resolve_model("claude") == "anthropic/claude-sonnet-5"
     assert resolve_model("opus") == "anthropic/claude-opus-4.8"
+    assert resolve_model("grok") == "x-ai/grok-4.5"
+
+
+def test_resolve_deprecated_gpt55_alias():
+    """gpt55 is a deprecated alias: keeps old callers working across the
+    GPT-5.5 -> GPT-5.6 Sol upgrade instead of hard-breaking them."""
+    assert resolve_model("gpt55") == "openai/gpt-5.6-sol"
 
 
 def test_resolve_unknown_model():
