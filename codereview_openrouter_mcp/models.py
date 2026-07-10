@@ -148,8 +148,8 @@ def resolve_model(name: str) -> str:
 
 
 def get_reasoning_config(name: str) -> dict:
-    return REASONING_CONFIG.get(name, {})
+    return REASONING_CONFIG.get(canonicalize_model(name), {})
 
 
 def get_model_extra_body(name: str) -> dict:
-    return deepcopy(MODEL_EXTRA_BODY.get(name, {}))
+    return deepcopy(MODEL_EXTRA_BODY.get(canonicalize_model(name), {}))

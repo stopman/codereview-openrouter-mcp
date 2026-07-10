@@ -1,5 +1,7 @@
 import re
 
+from codereview_openrouter_mcp.models import canonicalize_model
+
 # --- Persona-driven system prompts ---
 #
 # Multi-model code review benefits from distinct reviewer perspectives rather
@@ -751,7 +753,7 @@ _PLAN_REVIEW_PROMPTS_BY_PERSONA: dict[str, str] = {
 
 def get_persona(model_name: str) -> str | None:
     """Return the persona name for a model, or None if unmapped."""
-    return PERSONA_MAP.get(model_name)
+    return PERSONA_MAP.get(canonicalize_model(model_name))
 
 
 def get_review_system_prompt(model_name: str) -> str:
@@ -759,7 +761,7 @@ def get_review_system_prompt(model_name: str) -> str:
 
     Falls back to the comprehensive REVIEW_SYSTEM_PROMPT for unmapped models.
     """
-    persona = PERSONA_MAP.get(model_name)
+    persona = PERSONA_MAP.get(canonicalize_model(model_name))
     if persona is None:
         return REVIEW_SYSTEM_PROMPT
     return _REVIEW_PROMPTS_BY_PERSONA[persona]
@@ -770,7 +772,7 @@ def get_plan_review_system_prompt(model_name: str) -> str:
 
     Falls back to the comprehensive PLAN_REVIEW_SYSTEM_PROMPT for unmapped models.
     """
-    persona = PERSONA_MAP.get(model_name)
+    persona = PERSONA_MAP.get(canonicalize_model(model_name))
     if persona is None:
         return PLAN_REVIEW_SYSTEM_PROMPT
     return _PLAN_REVIEW_PROMPTS_BY_PERSONA[persona]

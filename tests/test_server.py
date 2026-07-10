@@ -344,6 +344,54 @@ def test_gpt55_is_deprecated_alias_for_gpt56():
     assert canonicalize_model("all") == "all"
 
 
+def test_alias_honored_by_all_lookup_helpers():
+    """Every model-lookup helper must honor deprecated aliases itself, not
+    rely on callers canonicalizing first — a direct 'gpt55' lookup must
+    behave exactly like 'gpt56'."""
+    from codereview_openrouter_mcp.models import (
+        get_model_extra_body,
+        get_reasoning_config,
+    )
+    from codereview_openrouter_mcp.prompts import (
+        get_persona,
+        get_plan_review_system_prompt,
+        get_review_system_prompt,
+    )
+
+    assert get_reasoning_config("gpt55") == get_reasoning_config("gpt56")
+    assert get_reasoning_config("gpt55"), "alias must not return empty config"
+    assert get_model_extra_body("gpt55") == get_model_extra_body("gpt56")
+    assert get_persona("gpt55") == get_persona("gpt56") == "architect"
+    assert get_review_system_prompt("gpt55") == get_review_system_prompt("gpt56")
+    assert get_plan_review_system_prompt("gpt55") == get_plan_review_system_prompt("gpt56")
+
+
+@pytest.mark.asyncio
+async def test_review_plan_accepts_gpt55_alias_end_to_end(mock_ctx):
+    """A deprecated caller passing model='gpt55' must get the full gpt56
+    slot behavior through the real tool path: GPT-5.6 Sol model id, the
+    architect persona prompt, and the slot's xhigh reasoning config."""
+    from codereview_openrouter_mcp.prompts import get_plan_review_system_prompt
+    from codereview_openrouter_mcp.server import review_plan
+
+    captured = {}
+
+    async def fake_review(content, system_prompt, model_id, extra_body=None, max_tokens=None):
+        captured["system_prompt"] = system_prompt
+        captured["model_id"] = model_id
+        captured["extra_body"] = extra_body
+        return "LGTM"
+
+    with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
+        result = await review_plan(plan="Add caching layer", model="gpt55", ctx=mock_ctx)
+
+    assert "LGTM" in result
+    assert captured["model_id"] == "openai/gpt-5.6-sol"
+    assert captured["system_prompt"] == get_plan_review_system_prompt("gpt56")
+    assert "Architect" in captured["system_prompt"]
+    assert captured["extra_body"]["reasoning"]["effort"] == "xhigh"
+
+
 def test_grok_slot_pins_first_party_provider():
     """Grok 4.5 routes only to xAI's first-party endpoints: defense in depth
     so a future third-party Grok reseller on OpenRouter can never receive
