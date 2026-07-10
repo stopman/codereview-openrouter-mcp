@@ -3,6 +3,7 @@ import os
 from dotenv import load_dotenv
 
 from codereview_openrouter_mcp.logging import get_logger
+from codereview_openrouter_mcp.models import DEFAULT_MODEL
 
 load_dotenv(override=True)
 
@@ -26,7 +27,7 @@ def _safe_positive_int(value: str | None, default: int) -> int:
 class Settings:
     def __init__(self):
         self.openrouter_api_key: str = os.getenv("OPENROUTER_API_KEY", "")
-        self.default_model: str = os.getenv("DEFAULT_MODEL", "gpt55")
+        self.default_model: str = os.getenv("DEFAULT_MODEL", DEFAULT_MODEL)
         self.max_diff_chars: int = _safe_positive_int(os.getenv("MAX_DIFF_CHARS"), 500000)
         self.log_level: str = os.getenv("LOG_LEVEL", "INFO").upper()
         # Privacy: only route to Zero-Data-Retention provider endpoints.
