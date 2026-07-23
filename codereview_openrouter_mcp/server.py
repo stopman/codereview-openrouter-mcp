@@ -51,11 +51,11 @@ CodeReview MCP — multi-model code and plan review via OpenRouter.
 ## Picking a model
 
 - `model="all"` (RECOMMENDED for important reviews): runs a 5-model panel with
-  complementary personas — GPT-5.5 (architect), GPT-5.3 (detail-oriented),
+  complementary personas — GPT-5.6 Sol (architect), GPT-5.3 (detail-oriented),
   Claude Sonnet 5 (first-principles / simplicity), Claude Opus 4.8
   (production/pragmatist + security), Grok 4.5 (generalist).
   Returns the panel's reviews as markdown; the caller (you) synthesizes.
-- Single model picks: `gpt55` (default, architect lens), `openai` (detail),
+- Single model picks: `sol` (default, architect lens), `openai` (detail),
   `claude` (first-principles simplicity), `opus` (production/pragmatist +
   security), `grok` (generalist breadth), `glm` (generalist; benched from
   the panel but still selectable, US-hosted only).
@@ -98,7 +98,7 @@ modifies, and any in-flight related plans.
 
 Multi-model reviews wait for the entire panel and return one markdown
 section per reviewer, headed by model + persona (e.g. `# Review by
-GPT-5.5 — architect persona`). If a panel member fails, its
+GPT-5.6 Sol — architect persona`). If a panel member fails, its
 persona is covered by a lightweight fallback model (Claude Haiku 4.5 or
 Gemini 3.5 Flash) and the section header discloses the substitution.
 When `model="all"`, expect to synthesize across the panel yourself; do not
@@ -350,7 +350,7 @@ async def _prepare_diff(diff: str) -> str:
 
     Args:
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gpt55, openai, claude, opus, grok, glm, all
+        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -365,7 +365,7 @@ async def _prepare_diff(diff: str) -> str:
 )
 async def review_diff(
     repo_path: str = ".",
-    model: str = "gpt55",
+    model: str = "sol",
     focus: str = "all",
     context_files: list[str] | None = None,
     ctx: Context | None = None,
@@ -401,7 +401,7 @@ async def review_diff(
     Args:
         repo_path: Path to the git repository (defaults to current directory)
         sha: Commit SHA to review (defaults to HEAD)
-        model: Model to use for review. Options: gpt55, openai, claude, opus, grok, glm, all
+        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -417,7 +417,7 @@ async def review_diff(
 async def review_commit(
     repo_path: str = ".",
     sha: str = "HEAD",
-    model: str = "gpt55",
+    model: str = "sol",
     focus: str = "all",
     context_files: list[str] | None = None,
     ctx: Context | None = None,
@@ -454,7 +454,7 @@ async def review_commit(
         repo_path: Path to the git repository (defaults to current directory)
         branch: Branch to review
         base: Base branch to compare against (defaults to main)
-        model: Model to use for review. Options: gpt55, openai, claude, opus, grok, glm, all
+        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -471,7 +471,7 @@ async def review_branch(
     branch: str,
     repo_path: str = ".",
     base: str = "main",
-    model: str = "gpt55",
+    model: str = "sol",
     focus: str = "all",
     context_files: list[str] | None = None,
     ctx: Context | None = None,
@@ -507,7 +507,7 @@ async def review_branch(
     Args:
         file_path: Path to the file relative to repo_path
         repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: gpt55, openai, claude, opus, grok, glm, all
+        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
         focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
         context_files: Optional but recommended for non-trivial changes —
             paths (relative to repo_path) to markdown/text docs to attach as
@@ -523,7 +523,7 @@ async def review_branch(
 async def review_file(
     file_path: str,
     repo_path: str = ".",
-    model: str = "gpt55",
+    model: str = "sol",
     focus: str = "all",
     context_files: list[str] | None = None,
     ctx: Context | None = None,
@@ -609,7 +609,7 @@ async def _do_plan_review(
     Args:
         plan: The plan or design document text to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gpt55, openai, claude, opus, grok, glm, all
+        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
         repo_path: Path to the git repository — required only if context_files is set
         context_files: Optional but recommended for plan reviews — paths
             (relative to repo_path) to markdown/text docs that ground the
@@ -622,7 +622,7 @@ async def _do_plan_review(
 async def review_plan(
     plan: str,
     codebase_context: str = "",
-    model: str = "gpt55",
+    model: str = "sol",
     repo_path: str = ".",
     context_files: list[str] | None = None,
     ctx: Context | None = None,
@@ -658,7 +658,7 @@ async def review_plan(
     Args:
         plan: The plan, design document, or reasoning task to review
         codebase_context: Optional relevant code snippets for grounding the review
-        model: Model to use for review. Options: gpt55, openai, claude, opus, grok, glm, all
+        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
         repo_path: Path to the git repository — required only if context_files is set
         context_files: Optional but recommended for plan reviews — paths
             (relative to repo_path) to markdown/text docs that ground the
@@ -671,7 +671,7 @@ async def review_plan(
 async def review_oracle(
     plan: str,
     codebase_context: str = "",
-    model: str = "gpt55",
+    model: str = "sol",
     repo_path: str = ".",
     context_files: list[str] | None = None,
     ctx: Context | None = None,

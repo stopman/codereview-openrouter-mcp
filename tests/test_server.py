@@ -113,7 +113,7 @@ async def test_review_plan_redacts_secrets_in_plan(mock_ctx):
         patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM"),
     ):
         mock_redact.return_value = ("Use this key: ***", [{"type": "AWS Access Key", "line_number": 1}])
-        result = await review_plan(plan=plan_with_secret, model="gpt55", ctx=mock_ctx)
+        result = await review_plan(plan=plan_with_secret, model="sol", ctx=mock_ctx)
 
     # redact_secrets must have been called with the plan text
     mock_redact.assert_called()
@@ -139,7 +139,7 @@ async def test_review_plan_redacts_secrets_in_codebase_context(mock_ctx):
             ("clean plan", []),
             ("***", [{"type": "GitHub Token", "line_number": 1}]),
         ]
-        await review_plan(plan="clean plan", codebase_context=context_with_secret, model="gpt55", ctx=mock_ctx)
+        await review_plan(plan="clean plan", codebase_context=context_with_secret, model="sol", ctx=mock_ctx)
 
     assert mock_redact.call_count == 2, "redact_secrets should be called for both plan and codebase_context"
 
@@ -153,7 +153,7 @@ async def test_review_plan_secret_never_reaches_llm(mock_ctx):
     plan_with_secret = f"Deploy with key {fake_aws_key} to prod"
 
     with patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM") as mock_get_review:
-        await review_plan(plan=plan_with_secret, model="gpt55", ctx=mock_ctx)
+        await review_plan(plan=plan_with_secret, model="sol", ctx=mock_ctx)
 
     # Check that the prompt sent to the LLM does NOT contain the raw key
     prompt_sent = mock_get_review.call_args[0][0]  # first positional arg
@@ -232,16 +232,19 @@ def test_resolve_model_all_raises():
 def test_all_review_models_is_expected_panel():
     """Lock in the panel composition: five ZDR-routable models, one per persona.
 
-    GPT-5.5=architect, GPT-5.3=detail, Sonnet 5=simplicity, Opus=pragmatist,
-    Grok 4.5=generalist. Strict ZDR: models without a ZDR endpoint (Fable 5,
-    GPT-5.5 Pro) cannot sit on the panel. DeepSeek, Kimi, and the Fusion
-    meta-router remain excluded. Grok 4.5 took the generalist slot from
-    GLM 5.2 on 2026-07-23 (xAI is US-based with dedicated ZDR endpoints,
-    verified live); GLM 5.2 is benched but stays selectable explicitly.
+    GPT-5.6 Sol=architect, GPT-5.3=detail, Sonnet 5=simplicity,
+    Opus=pragmatist, Grok 4.5=generalist. Strict ZDR: models without a ZDR
+    endpoint (Fable 5, GPT-5.5 Pro) cannot sit on the panel. DeepSeek, Kimi,
+    and the Fusion meta-router remain excluded. Grok 4.5 took the generalist
+    slot from GLM 5.2 on 2026-07-23 (xAI is US-based with dedicated ZDR
+    endpoints, verified live); GLM 5.2 is benched but stays selectable
+    explicitly. GPT-5.6 Sol replaced GPT-5.5 in the architect slot on
+    2026-07-23 (same price, better indices, ZDR-verified); the old "gpt55"
+    slot name is retired.
     """
     from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
 
-    assert ALL_REVIEW_MODELS == ["gpt55", "openai", "claude", "opus", "grok"]
+    assert ALL_REVIEW_MODELS == ["sol", "openai", "claude", "opus", "grok"]
 
 
 def test_claude_slot_uses_sonnet_5():
@@ -363,7 +366,7 @@ def test_removed_models_absent_from_registry():
     )
     from codereview_openrouter_mcp.prompts import PERSONA_MAP
 
-    for name in ("qwen", "deepseek", "kimi", "fusion", "gemini", "gptpro"):
+    for name in ("qwen", "deepseek", "kimi", "fusion", "gemini", "gptpro", "gpt55"):
         assert name not in MODELS, f"'{name}' still in MODELS"
         assert name not in MODEL_DISPLAY_NAMES, f"'{name}' still in MODEL_DISPLAY_NAMES"
         assert name not in REASONING_CONFIG, f"'{name}' still in REASONING_CONFIG"
@@ -412,11 +415,12 @@ def test_reasoning_config_claude_uses_verbosity_max():
     assert config["reasoning"]["effort"] == "xhigh"
 
 
-def test_reasoning_config_gpt55_uses_xhigh():
+def test_reasoning_config_sol_uses_max():
+    """GPT-5.6 Sol supports a "max" reasoning tier above xhigh — use it."""
     from codereview_openrouter_mcp.models import get_reasoning_config
 
-    config = get_reasoning_config("gpt55")
-    assert config["reasoning"]["effort"] == "xhigh"
+    config = get_reasoning_config("sol")
+    assert config["reasoning"]["effort"] == "max"
 
 
 def test_reasoning_config_opus_uses_xhigh_verbosity_max():
@@ -473,7 +477,7 @@ async def test_multi_model_review_partial_failure_uses_fallback():
         result = await _do_multi_model_review("test prompt", _fixed_prompt_fn("system prompt"))
 
     # The other members still report normally
-    assert "GPT-5.5" in result
+    assert "GPT-5.6 Sol" in result
     assert "GPT-5.3 Codex" in result
     assert "Claude Sonnet 5" in result
     # The pragmatist slot is covered by the fallback, disclosed in the header
@@ -530,8 +534,8 @@ async def test_review_oracle_works_like_review_plan(mock_ctx):
     from codereview_openrouter_mcp.server import review_oracle, review_plan
 
     with patch("codereview_openrouter_mcp.server.get_review", new_callable=AsyncMock, return_value="LGTM"):
-        plan_result = await review_plan(plan="Add caching layer", model="gpt55", ctx=mock_ctx)
-        oracle_result = await review_oracle(plan="Add caching layer", model="gpt55", ctx=mock_ctx)
+        plan_result = await review_plan(plan="Add caching layer", model="sol", ctx=mock_ctx)
+        oracle_result = await review_oracle(plan="Add caching layer", model="sol", ctx=mock_ctx)
 
     assert plan_result == oracle_result
 
@@ -619,7 +623,7 @@ async def test_review_plan_all_uses_multi_model(mock_ctx):
         result = await review_plan(plan="Add auth", model="all", ctx=mock_ctx)
 
     assert len(call_models) == len(ALL_REVIEW_MODELS)
-    assert "GPT-5.5" in result
+    assert "GPT-5.6 Sol" in result
     assert "GPT-5.3 Codex" in result
 
 
@@ -756,7 +760,7 @@ def test_persona_map_assigns_expected_personas():
         PERSONA_SIMPLICITY,
     )
 
-    assert PERSONA_MAP["gpt55"] == PERSONA_ARCHITECT
+    assert PERSONA_MAP["sol"] == PERSONA_ARCHITECT
     assert PERSONA_MAP["openai"] == PERSONA_DETAIL
     assert PERSONA_MAP["claude"] == PERSONA_SIMPLICITY
     assert PERSONA_MAP["opus"] == PERSONA_PRAGMATIST
@@ -766,7 +770,7 @@ def test_get_review_system_prompt_returns_persona_specific():
     """Each model should get its persona's distinctive prompt content."""
     from codereview_openrouter_mcp.prompts import get_review_system_prompt
 
-    architect = get_review_system_prompt("gpt55")
+    architect = get_review_system_prompt("sol")
     detail = get_review_system_prompt("openai")
     simplicity = get_review_system_prompt("claude")
     pragmatist = get_review_system_prompt("opus")
@@ -792,7 +796,7 @@ def test_get_plan_review_system_prompt_returns_persona_specific():
     """Plan-review prompts must also be persona-specific."""
     from codereview_openrouter_mcp.prompts import get_plan_review_system_prompt
 
-    architect = get_plan_review_system_prompt("gpt55")
+    architect = get_plan_review_system_prompt("sol")
     detail = get_plan_review_system_prompt("openai")
     simplicity = get_plan_review_system_prompt("claude")
     pragmatist = get_plan_review_system_prompt("opus")
@@ -1009,7 +1013,7 @@ async def test_review_diff_injects_context_files_into_prompt(mock_ctx, tmp_path)
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await review_diff(
             repo_path=str(tmp_path),
-            model="gpt55",
+            model="sol",
             context_files=["ARCH.md"],
             ctx=mock_ctx,
         )
@@ -1035,7 +1039,7 @@ async def test_review_plan_injects_context_files_into_prompt(mock_ctx, tmp_path)
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await review_plan(
             plan="Add an LRU cache to the user service",
-            model="gpt55",
+            model="sol",
             repo_path=str(tmp_path),
             context_files=["VISION.md"],
             ctx=mock_ctx,
@@ -1071,7 +1075,7 @@ async def test_review_diff_redacts_secrets_in_context_files(mock_ctx, tmp_path):
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await review_diff(
             repo_path=str(tmp_path),
-            model="gpt55",
+            model="sol",
             context_files=["DEPLOY.md"],
             ctx=mock_ctx,
         )
@@ -1104,7 +1108,7 @@ async def test_review_diff_missing_context_file_surfaces_notice(mock_ctx, tmp_pa
     with patch("codereview_openrouter_mcp.server.get_review", side_effect=fake_review):
         await review_diff(
             repo_path=str(tmp_path),
-            model="gpt55",
+            model="sol",
             context_files=["ARCH_THAT_DOESNT_EXIST.md"],
             ctx=mock_ctx,
         )

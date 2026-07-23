@@ -2,7 +2,7 @@
 
 An MCP server that gives your AI coding assistant access to **staff/principal-engineer-level code review** from the world's best LLMs — all through a single OpenRouter API key.
 
-Pick your reviewer per-request: **GPT-5.5**, **GPT-5.3 Codex**, **Claude Sonnet 5**, **Claude Opus 4.8**, **Grok 4.5**, or **GLM 5.2**. Compare opinions. Get a second (or third) opinion on your code before it ships.
+Pick your reviewer per-request: **GPT-5.6 Sol**, **GPT-5.3 Codex**, **Claude Sonnet 5**, **Claude Opus 4.8**, **Grok 4.5**, or **GLM 5.2**. Compare opinions. Get a second (or third) opinion on your code before it ships.
 
 ## Why this exists
 
@@ -11,7 +11,7 @@ Your AI coding assistant writes code. But who reviews it?
 Other code review MCP servers lock you into one model, require multiple API keys, or don't actually do LLM-powered review at all. This one:
 
 - **One API key** (OpenRouter) gives you access to every major model
-- **You pick the reviewer** per-request — compare what GPT-5.5 thinks vs Claude vs GPT-5.3
+- **You pick the reviewer** per-request — compare what GPT-5.6 Sol thinks vs Claude vs GPT-5.3
 - **`model="all"`** fans out to a 5-persona panel in parallel and waits for every member (failed members are covered by cross-vendor fallbacks) — full multi-perspective review
 - **Secrets are redacted** before your code leaves your machine (via [detect-secrets](https://github.com/Yelp/detect-secrets))
 - **Staff engineer prompt** — not generic "review this code" but a structured 6-dimension review covering security, architecture, edge cases, implementation, style, and abstractions
@@ -59,7 +59,7 @@ Once the MCP server is configured, just ask Claude Code in natural language. Her
 
 > "Review my current changes before I commit"
 
-> "Use codereview to review my working diff with GPT-5.5"
+> "Use codereview to review my working diff with GPT-5.6 Sol"
 
 > "Do a security-focused review of my staged changes"
 
@@ -93,7 +93,7 @@ Once the MCP server is configured, just ask Claude Code in natural language. Her
 
 > "Review the last commit with all models"
 
-> "Review my changes with both GPT-5.5 and Claude and compare what they find"
+> "Review my changes with both GPT-5.6 Sol and Claude and compare what they find"
 
 #### Specifying focus areas
 
@@ -126,7 +126,7 @@ All review tools accept an optional `context_files: list[str]` parameter — pat
 Reviews your current staged + unstaged changes (what you'd see in `git diff HEAD`).
 
 ```
-review_diff(repo_path=".", model="gpt55", focus="all", context_files=["ARCHITECTURE.md"])
+review_diff(repo_path=".", model="sol", focus="all", context_files=["ARCHITECTURE.md"])
 ```
 
 **Example prompt:** *"Review my current changes before I commit"*
@@ -166,7 +166,7 @@ review_file(file_path="src/auth.py", repo_path=".", model="claude", focus="archi
 Evaluates a plan for first-principles thinking, simplicity (KISS), security risks, edge cases, and architecture quality. Uses maximum reasoning effort for the deepest analysis.
 
 ```
-review_plan(plan="We plan to...", codebase_context="", model="gpt55", repo_path=".", context_files=["docs/roadmap.md"])
+review_plan(plan="We plan to...", codebase_context="", model="sol", repo_path=".", context_files=["docs/roadmap.md"])
 ```
 
 **Example prompt:** *"Review my plan for the database migration"*
@@ -176,22 +176,22 @@ review_plan(plan="We plan to...", codebase_context="", model="gpt55", repo_path=
 Identical to `review_plan`. Exists for discoverability by AI coding assistants that use the term "oracle" (e.g., Amp).
 
 ```
-review_oracle(plan="We plan to...", codebase_context="", model="gpt55")
+review_oracle(plan="We plan to...", codebase_context="", model="sol")
 ```
 
 ## Models
 
 | Name | Model | Best for |
 |---|---|---|
-| `gpt55` | OpenAI GPT-5.5 | Architect reviews, deep reasoning (default) |
+| `sol` | OpenAI GPT-5.6 Sol | Architect reviews, deep reasoning (default) |
 | `openai` | OpenAI GPT-5.3 Codex | Deep code understanding |
 | `claude` | Anthropic Claude Sonnet 5 | First-principles simplicity |
 | `opus` | Anthropic Claude Opus 4.8 | Production pragmatism + security reviews |
 | `grok` | xAI Grok 4.5 | Generalist breadth |
 | `glm` | Z.ai GLM 5.2 (US-hosted providers only) | Generalist breadth, cheap and fast — benched from the panel, explicit picks only |
-| `all` | Panel: GPT-5.5 + GPT-5.3 + Claude Sonnet 5 + Claude Opus 4.8 + Grok 4.5 | Multi-perspective review |
+| `all` | Panel: GPT-5.6 Sol + GPT-5.3 + Claude Sonnet 5 + Claude Opus 4.8 + Grok 4.5 | Multi-perspective review |
 
-Pass `model="gpt55"`, `model="openai"`, `model="claude"`, `model="opus"`, `model="grok"`, `model="glm"`, or `model="all"` to any tool. Default is `gpt55`.
+Pass `model="sol"`, `model="openai"`, `model="claude"`, `model="opus"`, `model="grok"`, `model="glm"`, or `model="all"` to any tool. Default is `sol`.
 
 With `model="all"` reviews are fanned out to all five panel members concurrently and the server waits for the whole panel (wall-clock time is set by the slowest reviewer). If a panel member errors out, its persona is re-run on a lightweight fallback model (Claude Haiku 4.5 or Gemini 3.5 Flash — always cross-vendor from the primary) and the substitution is disclosed in the review's section header.
 
@@ -256,9 +256,9 @@ The real power is comparing reviewers. Use `model="all"` or ask for multiple mod
 
 > "Review the last commit with all models"
 
-> "Review the last commit with both GPT-5.5 and Claude"
+> "Review the last commit with both GPT-5.6 Sol and Claude"
 
-Different models catch different things — GPT-5.5 might flag a performance issue that GPT-5.3 misses, while Claude spots an architectural concern neither caught.
+Different models catch different things — GPT-5.6 Sol might flag a performance issue that GPT-5.3 misses, while Claude spots an architectural concern neither caught.
 
 ## Secret scanning
 
@@ -275,7 +275,7 @@ This catches AWS keys, GitHub tokens, passwords, private keys, connection string
 | Environment variable | Required | Default | Description |
 |---|---|---|---|
 | `OPENROUTER_API_KEY` | Yes | — | Your OpenRouter API key |
-| `DEFAULT_MODEL` | No | `gpt55` | Default model when none specified |
+| `DEFAULT_MODEL` | No | `sol` | Default model when none specified |
 | `MAX_DIFF_CHARS` | No | `500000` | Max characters before truncation |
 | `LOG_LEVEL` | No | `INFO` | Logging level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
 | `ALLOWED_REPO_ROOTS` | No | — | Comma-separated list of allowed repository root paths. If unset, all repos are accessible |
