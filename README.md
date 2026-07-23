@@ -2,7 +2,7 @@
 
 An MCP server that gives your AI coding assistant access to **staff/principal-engineer-level code review** from the world's best LLMs — all through a single OpenRouter API key.
 
-Pick your reviewer per-request: **GPT-5.5**, **GPT-5.3 Codex**, **Claude Sonnet 5**, **Claude Opus 4.8**, or **GLM 5.2**. Compare opinions. Get a second (or third) opinion on your code before it ships.
+Pick your reviewer per-request: **GPT-5.5**, **GPT-5.3 Codex**, **Claude Sonnet 5**, **Claude Opus 4.8**, **Grok 4.5**, or **GLM 5.2**. Compare opinions. Get a second (or third) opinion on your code before it ships.
 
 ## Why this exists
 
@@ -12,7 +12,7 @@ Other code review MCP servers lock you into one model, require multiple API keys
 
 - **One API key** (OpenRouter) gives you access to every major model
 - **You pick the reviewer** per-request — compare what GPT-5.5 thinks vs Claude vs GPT-5.3
-- **`model="all"`** fans out to all models in parallel and returns the first 3 responses — instant multi-perspective review
+- **`model="all"`** fans out to a 5-persona panel in parallel and waits for every member (failed members are covered by cross-vendor fallbacks) — full multi-perspective review
 - **Secrets are redacted** before your code leaves your machine (via [detect-secrets](https://github.com/Yelp/detect-secrets))
 - **Staff engineer prompt** — not generic "review this code" but a structured 6-dimension review covering security, architecture, edge cases, implementation, style, and abstractions
 - **Plan/design review** — review technical plans and design documents, not just code
@@ -187,14 +187,13 @@ review_oracle(plan="We plan to...", codebase_context="", model="gpt55")
 | `openai` | OpenAI GPT-5.3 Codex | Deep code understanding |
 | `claude` | Anthropic Claude Sonnet 5 | First-principles simplicity |
 | `opus` | Anthropic Claude Opus 4.8 | Production pragmatism + security reviews |
-| `glm` | Z.ai GLM 5.2 (US-hosted providers only) | Generalist breadth, cheap and fast |
-| `all` | Panel: GPT-5.5 + GPT-5.3 + Claude Sonnet 5 + Claude Opus 4.8 + GLM 5.2 | Multi-perspective review |
+| `grok` | xAI Grok 4.5 | Generalist breadth |
+| `glm` | Z.ai GLM 5.2 (US-hosted providers only) | Generalist breadth, cheap and fast — benched from the panel, explicit picks only |
+| `all` | Panel: GPT-5.5 + GPT-5.3 + Claude Sonnet 5 + Claude Opus 4.8 + Grok 4.5 | Multi-perspective review |
 
-Pass `model="gpt55"`, `model="openai"`, `model="claude"`, `model="opus"`, `model="glm"`, or `model="all"` to any tool. Default is `gpt55`.
+Pass `model="gpt55"`, `model="openai"`, `model="claude"`, `model="opus"`, `model="grok"`, `model="glm"`, or `model="all"` to any tool. Default is `gpt55`.
 
-With `model="all"` the server waits for the whole panel. If a panel member errors out, its persona is re-run on a lightweight fallback model (Claude Haiku 4.5 or Gemini 3.5 Flash — always cross-vendor from the primary) and the substitution is disclosed in the review's section header.
-
-When `model="all"` is used, reviews are fanned out to all models concurrently. The server returns as soon as the first 3 responses arrive; slower models are cancelled.
+With `model="all"` reviews are fanned out to all five panel members concurrently and the server waits for the whole panel (wall-clock time is set by the slowest reviewer). If a panel member errors out, its persona is re-run on a lightweight fallback model (Claude Haiku 4.5 or Gemini 3.5 Flash — always cross-vendor from the primary) and the substitution is disclosed in the review's section header.
 
 ## Focus areas
 

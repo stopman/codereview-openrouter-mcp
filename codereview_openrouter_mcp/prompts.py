@@ -628,6 +628,10 @@ PERSONA_MAP: dict[str, str] = {
     "openai": PERSONA_DETAIL,
     "claude": PERSONA_SIMPLICITY,
     "opus": PERSONA_PRAGMATIST,
+    "grok": PERSONA_GENERALIST,
+    # glm is benched from the panel but keeps its persona for explicit
+    # single-model runs. Persona uniqueness is only enforced across
+    # ALL_REVIEW_MODELS, so sharing the generalist prompt is fine.
     "glm": PERSONA_GENERALIST,
 }
 

@@ -233,15 +233,15 @@ def test_all_review_models_is_expected_panel():
     """Lock in the panel composition: five ZDR-routable models, one per persona.
 
     GPT-5.5=architect, GPT-5.3=detail, Sonnet 5=simplicity, Opus=pragmatist,
-    GLM 5.2=generalist. Strict ZDR: models without a ZDR endpoint (Fable 5,
+    Grok 4.5=generalist. Strict ZDR: models without a ZDR endpoint (Fable 5,
     GPT-5.5 Pro) cannot sit on the panel. DeepSeek, Kimi, and the Fusion
-    meta-router remain excluded; GLM 5.2 returned pinned to US-based
-    providers only (see MODEL_EXTRA_BODY); Grok 4.3 gave way to Opus 4.8 so
-    a member explicitly owns security review.
+    meta-router remain excluded. Grok 4.5 took the generalist slot from
+    GLM 5.2 on 2026-07-23 (xAI is US-based with dedicated ZDR endpoints,
+    verified live); GLM 5.2 is benched but stays selectable explicitly.
     """
     from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS
 
-    assert ALL_REVIEW_MODELS == ["gpt55", "openai", "claude", "opus", "glm"]
+    assert ALL_REVIEW_MODELS == ["gpt55", "openai", "claude", "opus", "grok"]
 
 
 def test_claude_slot_uses_sonnet_5():
@@ -269,9 +269,12 @@ def test_no_slot_weakens_privacy_routing():
 
 
 def test_glm_slot_pins_us_provider_allowlist():
-    """GLM 5.2 is a Z.ai (non-US) model allowed back only with US hosting:
+    """GLM 5.2 is a Z.ai (non-US) model allowed only with US hosting:
     its slot must carry a non-empty provider.only allowlist of US-based
-    hosts, and the allowlist must exclude China-based providers."""
+    hosts, and the allowlist must exclude China-based providers.
+
+    Benched from the panel (Grok 4.5 holds the generalist slot) but still
+    selectable explicitly, so the guardrails must stay intact."""
     from codereview_openrouter_mcp.models import (
         MODEL_DISPLAY_NAMES,
         MODELS,
@@ -294,8 +297,39 @@ def test_glm_slot_pins_us_provider_allowlist():
     assert set(order) <= set(allowlist), "order must be a subset of the allowlist"
 
 
+def test_grok_slot_config():
+    """Grok 4.5 holds the generalist panel slot (replaced GLM 5.2, 2026-07-23).
+
+    xAI is US-based and serves dedicated ZDR endpoints, so no provider pins
+    are needed — the client's injected zdr=true routes correctly on its own.
+    Grok 4.5 supports at most effort=high (no xhigh)."""
+    from codereview_openrouter_mcp.models import (
+        MODEL_DISPLAY_NAMES,
+        MODELS,
+        get_model_extra_body,
+        get_reasoning_config,
+    )
+    from codereview_openrouter_mcp.prompts import (
+        PERSONA_GENERALIST,
+        PERSONA_MAP,
+        PLAN_REVIEW_SYSTEM_PROMPT,
+        REVIEW_SYSTEM_PROMPT,
+        get_plan_review_system_prompt,
+        get_review_system_prompt,
+    )
+
+    assert MODELS["grok"] == "x-ai/grok-4.5"
+    assert MODEL_DISPLAY_NAMES["grok"] == "Grok 4.5"
+    assert get_model_extra_body("grok") == {}
+    assert get_reasoning_config("grok") == {"reasoning": {"effort": "high"}}
+    assert PERSONA_MAP["grok"] == PERSONA_GENERALIST
+    assert get_review_system_prompt("grok") == REVIEW_SYSTEM_PROMPT
+    assert get_plan_review_system_prompt("grok") == PLAN_REVIEW_SYSTEM_PROMPT
+
+
 def test_glm_mapped_to_generalist_persona():
-    """GLM 5.2 fills the generalist slot: the comprehensive default prompts."""
+    """GLM 5.2 keeps the generalist prompts for explicit single-model runs,
+    even while benched from the panel."""
     from codereview_openrouter_mcp.prompts import (
         PERSONA_GENERALIST,
         PERSONA_MAP,
@@ -310,6 +344,16 @@ def test_glm_mapped_to_generalist_persona():
     assert get_plan_review_system_prompt("glm") == PLAN_REVIEW_SYSTEM_PROMPT
 
 
+def test_glm_benched_from_panel_but_not_deleted():
+    """GLM 5.2 must stay out of the panel roster while remaining fully
+    configured as an explicit single-model option."""
+    from codereview_openrouter_mcp.models import ALL_REVIEW_MODELS, MODELS, resolve_model
+
+    assert "glm" not in ALL_REVIEW_MODELS
+    assert MODELS["glm"] == "z-ai/glm-5.2"
+    assert resolve_model("glm") == "z-ai/glm-5.2"
+
+
 def test_removed_models_absent_from_registry():
     """Retired models must not linger anywhere in the registry as dead options."""
     from codereview_openrouter_mcp.models import (
@@ -319,7 +363,7 @@ def test_removed_models_absent_from_registry():
     )
     from codereview_openrouter_mcp.prompts import PERSONA_MAP
 
-    for name in ("qwen", "deepseek", "kimi", "fusion", "grok", "gemini", "gptpro"):
+    for name in ("qwen", "deepseek", "kimi", "fusion", "gemini", "gptpro"):
         assert name not in MODELS, f"'{name}' still in MODELS"
         assert name not in MODEL_DISPLAY_NAMES, f"'{name}' still in MODEL_DISPLAY_NAMES"
         assert name not in REASONING_CONFIG, f"'{name}' still in REASONING_CONFIG"
