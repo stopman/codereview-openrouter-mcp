@@ -6,17 +6,7 @@ from mcp.server.fastmcp import Context, FastMCP
 
 from codereview_openrouter_mcp.client import get_review
 from codereview_openrouter_mcp.config import settings
-from codereview_openrouter_mcp.git_ops import (
-    GitError,
-    filter_binary_diffs,
-    get_branch_diff,
-    get_commit_diff,
-    get_file_content,
-    get_working_diff,
-    read_context_files,
-    truncate_diff,
-    validate_repo,
-)
+from codereview_openrouter_mcp.context_files import ContextFilesError, read_context_files
 from codereview_openrouter_mcp.logging import get_logger, setup_logging
 from codereview_openrouter_mcp.models import (
     ALL_REVIEW_MODELS,
@@ -29,28 +19,27 @@ from codereview_openrouter_mcp.models import (
 )
 from codereview_openrouter_mcp.prompts import (
     format_plan_review_request,
-    format_review_request,
     get_persona,
     get_plan_review_system_prompt,
-    get_review_system_prompt,
-    sanitize_context,
 )
 from codereview_openrouter_mcp.secrets import redact_secrets
 
 log = get_logger("server")
 
 SERVER_INSTRUCTIONS = """\
-CodeReview MCP — multi-model code and plan review via OpenRouter.
+PlanReview MCP — multi-model plan and design review via OpenRouter.
 
 ## When to use this server
 
-- A non-trivial code change is ready for a second opinion (review_diff, review_commit, review_branch, review_file)
-- A technical plan or design needs scrutiny before implementation (review_plan / review_oracle)
-- A focused review is needed on one dimension: security, architecture, edge_cases, style, abstractions (pass `focus=`)
+- A technical plan, design document, or architecture proposal needs
+  scrutiny BEFORE implementation (review_plan / review_oracle)
+- You are about to present an implementation plan to the user — run it
+  past the panel first and fold the strongest feedback in
+- A hard reasoning or design question needs a second opinion ("oracle")
 
 ## Picking a model
 
-- `model="all"` (RECOMMENDED for important reviews): runs a 5-model panel with
+- `model="all"` (RECOMMENDED for important plans): runs a 5-model panel with
   complementary personas — GPT-5.6 Sol (architect), GPT-5.3 (detail-oriented),
   Claude Sonnet 5 (first-principles / simplicity), Claude Opus 4.8
   (production/pragmatist + security), Grok 4.5 (generalist).
@@ -59,40 +48,35 @@ CodeReview MCP — multi-model code and plan review via OpenRouter.
   `claude` (first-principles simplicity), `opus` (production/pragmatist +
   security), `grok` (generalist breadth), `glm` (generalist; benched from
   the panel but still selectable, US-hosted only).
-- For security-focused reviews (`focus="security"`), prefer `opus`, whose
-  persona explicitly covers security exposure.
+- For security-sensitive plans, prefer `opus`, whose persona explicitly
+  covers security exposure.
 
 ## Attaching project documentation — IMPORTANT
 
-Every tool accepts an optional `context_files: list[str]` parameter — paths
+Both tools accept an optional `context_files: list[str]` parameter — paths
 (relative to `repo_path`) to markdown/text docs (architecture briefs,
-READMEs, ADRs, design plans, CLAUDE.md, docs/ folder contents). The
-reviewer models read those docs alongside the code so they can judge the
-change against the project's *stated goals*, not in isolation.
+READMEs, ADRs, related plans, CLAUDE.md, docs/ folder contents). The
+reviewer models read those docs alongside the plan so they can judge it
+against the project's *stated goals* and the codebase it will land in,
+not in isolation.
 
-**Be proactive about this.** Before calling any review tool on a meaningful
-change, briefly scan the repo for project-context docs and include the
-relevant ones via `context_files`. Common locations to check:
+**Be proactive about this.** Before reviewing a meaningful plan, briefly
+scan the repo for project-context docs and include the relevant ones via
+`context_files`. Common locations to check:
 
 - `ARCHITECTURE.md`, `ARCH.md`, `DESIGN.md` at repo root
 - `README.md` (if it actually describes architecture, not just install steps)
 - `docs/` — especially `docs/architecture*`, `docs/design*`, `docs/adr/*`,
   `docs/plan*`, `docs/roadmap*`
-- `CLAUDE.md`, `AGENTS.md`, `.github/PULL_REQUEST_TEMPLATE.md`
-- An in-flight plan doc the user is working from
+- `CLAUDE.md`, `AGENTS.md`
+- Other in-flight plan docs the user is working from
 
-Pick the docs that are actually relevant to what the change touches —
-don't dump every markdown file. Skip changelogs, license files, install
-guides, and giant logs. Limits are 50 files / 200KB total / 100KB per file;
+Pick the docs that are actually relevant to what the plan touches — don't
+dump every markdown file. Skip changelogs, license files, install guides,
+and giant logs. Limits are 50 files / 200KB total / 100KB per file;
 oversized, binary, or missing files are skipped with a notice surfaced to
-the reviewer.
-
-## Plan reviews specifically
-
-`review_plan` and `review_oracle` also accept `context_files` (with
-`repo_path`) — use this when reviewing a design against the codebase the
-plan will land in. Pass the architecture doc, the existing module the plan
-modifies, and any in-flight related plans.
+the reviewer. Use `codebase_context` for relevant code snippets the plan
+will modify.
 
 ## Output
 
@@ -106,7 +90,7 @@ just paste the raw output to the user — surface the strongest agreed-upon
 findings and arbitrate disagreements.
 """
 
-mcp = FastMCP("CodeReview", instructions=SERVER_INSTRUCTIONS)
+mcp = FastMCP("PlanReview", instructions=SERVER_INSTRUCTIONS)
 
 PLAN_MAX_TOKENS = 16384
 
@@ -136,7 +120,7 @@ class _Progress:
 
 
 async def _do_single_review(
-    content: str, model_name: str, system_prompt: str, prompt: str,
+    model_name: str, system_prompt: str, prompt: str,
     use_reasoning: bool = False,
     max_tokens: int | None = None,
 ) -> tuple[str, str]:
@@ -173,42 +157,6 @@ async def _load_project_docs(
     return docs_text
 
 
-async def _do_review(
-    content: str, model: str, focus: str, progress: _Progress,
-    context: str = "",
-    project_docs: str = "",
-) -> str:
-    model = model or settings.default_model
-    content, findings = await asyncio.to_thread(redact_secrets, content)
-    if findings:
-        log.warning("Redacted %d potential secret(s) before sending to LLM", len(findings))
-        warning = "\n".join(f"  - {f['type']} (line {f['line_number']})" for f in findings)
-        context += f"\n\n⚠️ NOTICE: {len(findings)} potential secret(s) were redacted before sending:\n{warning}"
-    prompt = format_review_request(content, focus=focus, context=context, project_docs=project_docs)
-
-    if model == "all":
-        result = await _do_multi_model_review(prompt, get_review_system_prompt, progress=progress)
-        await progress.update("Review complete")
-        return result
-
-    model_id = resolve_model(model)
-    display = MODEL_DISPLAY_NAMES.get(model, model_id)
-    system_prompt = get_review_system_prompt(model)
-    persona = get_persona(model) or "default"
-    log.info("Sending review request: model=%s, persona=%s, focus=%s, content_len=%d",
-             model_id, persona, focus, len(content))
-    await progress.update(f"Sending to {display} ({persona}) for review...")
-    t0 = time.monotonic()
-    result = await get_review(
-        prompt, system_prompt, model_id,
-        extra_body=_compose_extra_body(model),
-    )
-    elapsed = time.monotonic() - t0
-    log.info("Review completed in %.1fs, response_len=%d", elapsed, len(result))
-    await progress.update(f"Review complete ({elapsed:.0f}s)")
-    return result
-
-
 async def _do_multi_model_review(
     prompt: str,
     system_prompt_fn: Callable[[str], str],
@@ -239,7 +187,7 @@ async def _do_multi_model_review(
     tasks = {
         asyncio.create_task(
             _do_single_review(
-                "", model_name, system_prompt_fn(model_name), prompt,
+                model_name, system_prompt_fn(model_name), prompt,
                 use_reasoning=use_reasoning,
                 max_tokens=max_tokens,
             )
@@ -337,222 +285,6 @@ async def _do_multi_model_review(
     return "\n\n".join(parts)
 
 
-async def _prepare_diff(diff: str) -> str:
-    raw_len = len(diff)
-    diff = filter_binary_diffs(diff)
-    diff = truncate_diff(diff, settings.max_diff_chars)
-    log.info("Diff prepared: raw=%d chars, after_filter=%d chars", raw_len, len(diff))
-    return diff
-
-
-@mcp.tool(
-    description="""Review current working tree changes (staged + unstaged diff).
-
-    Args:
-        repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
-        focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
-        context_files: Optional but recommended for non-trivial changes —
-            paths (relative to repo_path) to markdown/text docs to attach as
-            project context. Before calling, scan the repo for
-            ARCHITECTURE.md / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md /
-            in-flight plan files and include the ones relevant to what the
-            change touches, so the reviewer can evaluate the change against
-            the project's stated goals instead of in isolation. Skip
-            changelogs, install guides, and large logs. Max 50 files,
-            200K chars total, 100KB per file.
-    """
-)
-async def review_diff(
-    repo_path: str = ".",
-    model: str = "sol",
-    focus: str = "all",
-    context_files: list[str] | None = None,
-    ctx: Context | None = None,
-) -> str:
-    log.info("review_diff called: repo_path=%s, model=%s, focus=%s, context_files=%s",
-             repo_path, model, focus, context_files)
-    total = 2 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
-    progress = _Progress(ctx, total)
-    try:
-        await progress.update("Validating repository...")
-        if not await validate_repo(repo_path):
-            return f"Error: '{repo_path}' is not a git repository."
-        diff = await get_working_diff(repo_path)
-        if not diff.strip():
-            log.info("review_diff: no working tree changes found")
-            return "No working tree changes found. Nothing to review."
-        await progress.update("Preparing diff...")
-        diff = await _prepare_diff(diff)
-        project_docs = await _load_project_docs(repo_path, context_files)
-        return await _do_review(
-            diff, model, focus, progress,
-            context="Working tree diff (staged + unstaged changes)",
-            project_docs=project_docs,
-        )
-    except (GitError, ValueError) as e:
-        log.error("review_diff failed: %s", e)
-        return f"Error: {e}"
-
-
-@mcp.tool(
-    description="""Review a specific commit by SHA.
-
-    Args:
-        repo_path: Path to the git repository (defaults to current directory)
-        sha: Commit SHA to review (defaults to HEAD)
-        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
-        focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
-        context_files: Optional but recommended for non-trivial changes —
-            paths (relative to repo_path) to markdown/text docs to attach as
-            project context. Before calling, scan the repo for
-            ARCHITECTURE.md / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md /
-            in-flight plan files and include the ones relevant to what the
-            change touches, so the reviewer can evaluate the change against
-            the project's stated goals instead of in isolation. Skip
-            changelogs, install guides, and large logs. Max 50 files,
-            200K chars total, 100KB per file.
-    """
-)
-async def review_commit(
-    repo_path: str = ".",
-    sha: str = "HEAD",
-    model: str = "sol",
-    focus: str = "all",
-    context_files: list[str] | None = None,
-    ctx: Context | None = None,
-) -> str:
-    log.info("review_commit called: repo_path=%s, sha=%s, model=%s, focus=%s, context_files=%s",
-             repo_path, sha, model, focus, context_files)
-    total = 2 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
-    progress = _Progress(ctx, total)
-    try:
-        await progress.update("Validating repository...")
-        if not await validate_repo(repo_path):
-            return f"Error: '{repo_path}' is not a git repository."
-        diff = await get_commit_diff(repo_path, sha)
-        if not diff.strip():
-            log.info("review_commit: no changes in commit %s", sha)
-            return f"No changes found in commit {sha}."
-        await progress.update("Preparing diff...")
-        diff = await _prepare_diff(diff)
-        project_docs = await _load_project_docs(repo_path, context_files)
-        return await _do_review(
-            diff, model, focus, progress,
-            context=f"Commit {sanitize_context(sha)}",
-            project_docs=project_docs,
-        )
-    except (GitError, ValueError) as e:
-        log.error("review_commit failed: %s", e)
-        return f"Error: {e}"
-
-
-@mcp.tool(
-    description="""Review all changes on a branch compared to a base branch.
-
-    Args:
-        repo_path: Path to the git repository (defaults to current directory)
-        branch: Branch to review
-        base: Base branch to compare against (defaults to main)
-        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
-        focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
-        context_files: Optional but recommended for non-trivial changes —
-            paths (relative to repo_path) to markdown/text docs to attach as
-            project context. Before calling, scan the repo for
-            ARCHITECTURE.md / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md /
-            in-flight plan files and include the ones relevant to what the
-            change touches, so the reviewer can evaluate the change against
-            the project's stated goals instead of in isolation. Skip
-            changelogs, install guides, and large logs. Max 50 files,
-            200K chars total, 100KB per file.
-    """
-)
-async def review_branch(
-    branch: str,
-    repo_path: str = ".",
-    base: str = "main",
-    model: str = "sol",
-    focus: str = "all",
-    context_files: list[str] | None = None,
-    ctx: Context | None = None,
-) -> str:
-    log.info("review_branch called: branch=%s, base=%s, repo_path=%s, model=%s, focus=%s, context_files=%s",
-             branch, base, repo_path, model, focus, context_files)
-    total = 2 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
-    progress = _Progress(ctx, total)
-    try:
-        await progress.update("Validating repository...")
-        if not await validate_repo(repo_path):
-            return f"Error: '{repo_path}' is not a git repository."
-        diff = await get_branch_diff(repo_path, branch, base)
-        if not diff.strip():
-            log.info("review_branch: no changes between %s and %s", base, branch)
-            return f"No changes found between {base} and {branch}."
-        await progress.update("Preparing diff...")
-        diff = await _prepare_diff(diff)
-        project_docs = await _load_project_docs(repo_path, context_files)
-        return await _do_review(
-            diff, model, focus, progress,
-            context=f"Branch {sanitize_context(branch)} vs {sanitize_context(base)}",
-            project_docs=project_docs,
-        )
-    except (GitError, ValueError) as e:
-        log.error("review_branch failed: %s", e)
-        return f"Error: {e}"
-
-
-@mcp.tool(
-    description="""Review a single file in its entirety.
-
-    Args:
-        file_path: Path to the file relative to repo_path
-        repo_path: Path to the git repository (defaults to current directory)
-        model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
-        focus: Review focus. Options: all, security, architecture, edge_cases, style, abstractions
-        context_files: Optional but recommended for non-trivial changes —
-            paths (relative to repo_path) to markdown/text docs to attach as
-            project context. Before calling, scan the repo for
-            ARCHITECTURE.md / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md /
-            in-flight plan files and include the ones relevant to what the
-            change touches, so the reviewer can evaluate the change against
-            the project's stated goals instead of in isolation. Skip
-            changelogs, install guides, and large logs. Max 50 files,
-            200K chars total, 100KB per file.
-    """
-)
-async def review_file(
-    file_path: str,
-    repo_path: str = ".",
-    model: str = "sol",
-    focus: str = "all",
-    context_files: list[str] | None = None,
-    ctx: Context | None = None,
-) -> str:
-    log.info("review_file called: file_path=%s, repo_path=%s, model=%s, focus=%s, context_files=%s",
-             file_path, repo_path, model, focus, context_files)
-    total = 2 + (len(ALL_REVIEW_MODELS) + 1 if model == "all" else 2)
-    progress = _Progress(ctx, total)
-    try:
-        await progress.update("Validating repository...")
-        if not await validate_repo(repo_path):
-            return f"Error: '{repo_path}' is not a git repository."
-        content = await get_file_content(repo_path, file_path)
-        if not content.strip():
-            log.info("review_file: file '%s' is empty", file_path)
-            return f"File '{file_path}' is empty. Nothing to review."
-        await progress.update("Reading file...")
-        content = truncate_diff(content, settings.max_diff_chars)
-        project_docs = await _load_project_docs(repo_path, context_files)
-        return await _do_review(
-            content, model, focus, progress,
-            context=f"Full file review: {sanitize_context(file_path)}",
-            project_docs=project_docs,
-        )
-    except (GitError, ValueError) as e:
-        log.error("review_file failed: %s", e)
-        return f"Error: {e}"
-
-
 async def _do_plan_review(
     plan: str, codebase_context: str, model: str, progress: _Progress,
     project_docs: str = "",
@@ -610,13 +342,13 @@ async def _do_plan_review(
         plan: The plan or design document text to review
         codebase_context: Optional relevant code snippets for grounding the review
         model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
-        repo_path: Path to the git repository — required only if context_files is set
-        context_files: Optional but recommended for plan reviews — paths
-            (relative to repo_path) to markdown/text docs that ground the
-            plan in the codebase it will land in. Scan for ARCHITECTURE.md
-            / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md / related in-flight
-            plans, and attach the relevant ones. Skip changelogs and
-            install guides. Max 50 files, 200K chars total, 100KB per file.
+        repo_path: Path to the repository — required only if context_files is set
+        context_files: Optional but recommended — paths (relative to
+            repo_path) to markdown/text docs that ground the plan in the
+            codebase it will land in. Scan for ARCHITECTURE.md / DESIGN.md
+            / docs/ / CLAUDE.md / AGENTS.md / related in-flight plans, and
+            attach the relevant ones. Skip changelogs and install guides.
+            Max 50 files, 200K chars total, 100KB per file.
     """
 )
 async def review_plan(
@@ -638,7 +370,7 @@ async def review_plan(
             plan, codebase_context, model, progress,
             project_docs=project_docs,
         )
-    except (GitError, ValueError) as e:
+    except (ContextFilesError, ValueError) as e:
         log.error("review_plan failed: %s", e)
         return f"Error: {e}"
 
@@ -659,13 +391,13 @@ async def review_plan(
         plan: The plan, design document, or reasoning task to review
         codebase_context: Optional relevant code snippets for grounding the review
         model: Model to use for review. Options: sol, openai, claude, opus, grok, glm, all
-        repo_path: Path to the git repository — required only if context_files is set
-        context_files: Optional but recommended for plan reviews — paths
-            (relative to repo_path) to markdown/text docs that ground the
-            plan in the codebase it will land in. Scan for ARCHITECTURE.md
-            / DESIGN.md / docs/ / CLAUDE.md / AGENTS.md / related in-flight
-            plans, and attach the relevant ones. Skip changelogs and
-            install guides. Max 50 files, 200K chars total, 100KB per file.
+        repo_path: Path to the repository — required only if context_files is set
+        context_files: Optional but recommended — paths (relative to
+            repo_path) to markdown/text docs that ground the plan in the
+            codebase it will land in. Scan for ARCHITECTURE.md / DESIGN.md
+            / docs/ / CLAUDE.md / AGENTS.md / related in-flight plans, and
+            attach the relevant ones. Skip changelogs and install guides.
+            Max 50 files, 200K chars total, 100KB per file.
     """
 )
 async def review_oracle(
@@ -687,7 +419,7 @@ async def review_oracle(
             plan, codebase_context, model, progress,
             project_docs=project_docs,
         )
-    except (GitError, ValueError) as e:
+    except (ContextFilesError, ValueError) as e:
         log.error("review_oracle failed: %s", e)
         return f"Error: {e}"
 
@@ -695,9 +427,9 @@ async def review_oracle(
 def main():
     settings.validate()
     setup_logging(settings.log_level)
-    log.info("CodeReview MCP server starting (log_level=%s)", settings.log_level)
+    log.info("PlanReview MCP server starting (log_level=%s)", settings.log_level)
     if not settings.allowed_repo_roots:
-        log.warning("ALLOWED_REPO_ROOTS is not set — server can access any git repo on this system")
+        log.warning("ALLOWED_REPO_ROOTS is not set — context_files may read from any path on this system")
     mcp.run()
 
 
