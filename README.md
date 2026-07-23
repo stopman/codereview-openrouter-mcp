@@ -208,6 +208,14 @@ Narrow the review to what matters most (applies to code review tools, not plan r
 | `style` | Naming, readability, dead code, consistency |
 | `abstractions` | API design, leaky abstractions, over/under-engineering |
 
+## Customizing reviewer personas
+
+The system prompts for all five personas live in [`PERSONAS.md`](PERSONAS.md) at the repo root — one section per persona and mode, delimited by `## PERSONA: <persona>.<mode>` marker lines (e.g. `## PERSONA: architect.review`). Edit the text under a marker to change what that reviewer is told to do.
+
+- **Edits apply live**: the server re-reads the file whenever it changes — no restart needed. The next review uses your updated prompts.
+- **Safe to experiment**: if a save is malformed (missing/duplicate/unknown section), the running server keeps the last good version and logs a warning. A broken file at startup fails loudly with the exact problem named.
+- Which model gets which persona is mapped in `codereview_openrouter_mcp/prompts.py` (`PERSONA_MAP`).
+
 ## Review output
 
 ### Code reviews
