@@ -4,8 +4,8 @@ import os
 
 import pytest
 
-import codereview_openrouter_mcp.prompts as prompts
-from codereview_openrouter_mcp.prompts import (
+import planreview_openrouter_mcp.prompts as prompts
+from planreview_openrouter_mcp.prompts import (
     EXPECTED_PERSONA_KEYS,
     PERSONAS_FILE,
     load_personas,

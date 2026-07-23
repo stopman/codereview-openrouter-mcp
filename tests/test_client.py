@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import openai
 import pytest
 
-from codereview_openrouter_mcp.models import MODELS, resolve_model
+from planreview_openrouter_mcp.models import MODELS, resolve_model
 
 
 def test_resolve_known_models():
@@ -30,7 +30,7 @@ def test_all_models_have_slash():
 @pytest.mark.asyncio
 async def test_client_error_does_not_leak_api_details():
     """API errors should return sanitized messages without raw exception details."""
-    from codereview_openrouter_mcp.client import get_review
+    from planreview_openrouter_mcp.client import get_review
 
     sensitive_detail = "sk-ant-api03-secret-key-leaked-in-error"
     mock_response = MagicMock()
@@ -44,7 +44,7 @@ async def test_client_error_does_not_leak_api_details():
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(side_effect=error)
 
-    with patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client):
+    with patch("planreview_openrouter_mcp.client._get_client", return_value=mock_client):
         result = await get_review("test content", "system prompt", "google/gemini-3.1-pro-preview")
 
     assert sensitive_detail not in result, f"Sensitive detail leaked in error: {result}"
@@ -56,11 +56,11 @@ async def test_client_error_does_not_leak_api_details():
 
 async def _capture_create_kwargs(extra_body=None):
     """Run get_review against a mock and return the kwargs sent to OpenRouter."""
-    from codereview_openrouter_mcp.client import get_review
+    from planreview_openrouter_mcp.client import get_review
 
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(return_value=_make_success_response())
-    with patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client):
+    with patch("planreview_openrouter_mcp.client._get_client", return_value=mock_client):
         await get_review("code", "system", "google/gemini-3.5-flash", extra_body=extra_body)
     return mock_client.chat.completions.create.call_args.kwargs
 
@@ -98,7 +98,7 @@ async def test_privacy_provider_merges_existing_provider_subkeys():
 @pytest.mark.asyncio
 async def test_zdr_can_be_disabled_via_settings():
     """OPENROUTER_ZDR=false drops zdr but keeps data_collection=deny."""
-    from codereview_openrouter_mcp import client as client_mod
+    from planreview_openrouter_mcp import client as client_mod
 
     with patch.object(client_mod.settings, "require_zdr", False):
         kwargs = await _capture_create_kwargs(extra_body=None)
@@ -149,7 +149,7 @@ def _make_success_response(content: str = "LGTM") -> MagicMock:
 @pytest.mark.asyncio
 async def test_get_review_retries_on_429():
     """Should retry on 429 and eventually succeed."""
-    from codereview_openrouter_mcp.client import get_review
+    from planreview_openrouter_mcp.client import get_review
 
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(
@@ -161,7 +161,7 @@ async def test_get_review_retries_on_429():
     )
 
     with (
-        patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client),
+        patch("planreview_openrouter_mcp.client._get_client", return_value=mock_client),
         patch("asyncio.sleep", new_callable=AsyncMock),
     ):
         result = await get_review("code", "system", "google/gemini-3.1-pro-preview")
@@ -173,7 +173,7 @@ async def test_get_review_retries_on_429():
 @pytest.mark.asyncio
 async def test_get_review_retries_on_502():
     """Should retry on 502 and eventually succeed."""
-    from codereview_openrouter_mcp.client import get_review
+    from planreview_openrouter_mcp.client import get_review
 
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(
@@ -184,7 +184,7 @@ async def test_get_review_retries_on_502():
     )
 
     with (
-        patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client),
+        patch("planreview_openrouter_mcp.client._get_client", return_value=mock_client),
         patch("asyncio.sleep", new_callable=AsyncMock),
     ):
         result = await get_review("code", "system", "google/gemini-3.1-pro-preview")
@@ -196,7 +196,7 @@ async def test_get_review_retries_on_502():
 @pytest.mark.asyncio
 async def test_get_review_no_retry_on_401():
     """Should NOT retry on 401 (auth error)."""
-    from codereview_openrouter_mcp.client import get_review
+    from planreview_openrouter_mcp.client import get_review
 
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(
@@ -204,7 +204,7 @@ async def test_get_review_no_retry_on_401():
     )
 
     with (
-        patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client),
+        patch("planreview_openrouter_mcp.client._get_client", return_value=mock_client),
         patch("asyncio.sleep", new_callable=AsyncMock) as mock_sleep,
     ):
         result = await get_review("code", "system", "google/gemini-3.1-pro-preview")
@@ -217,7 +217,7 @@ async def test_get_review_no_retry_on_401():
 @pytest.mark.asyncio
 async def test_get_review_retries_on_connection_error():
     """Should retry on APIConnectionError (network failure)."""
-    from codereview_openrouter_mcp.client import get_review
+    from planreview_openrouter_mcp.client import get_review
 
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(
@@ -228,7 +228,7 @@ async def test_get_review_retries_on_connection_error():
     )
 
     with (
-        patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client),
+        patch("planreview_openrouter_mcp.client._get_client", return_value=mock_client),
         patch("asyncio.sleep", new_callable=AsyncMock),
     ):
         result = await get_review("code", "system", "google/gemini-3.1-pro-preview")
@@ -240,7 +240,7 @@ async def test_get_review_retries_on_connection_error():
 @pytest.mark.asyncio
 async def test_get_review_retries_on_timeout_error():
     """Should retry on APITimeoutError."""
-    from codereview_openrouter_mcp.client import get_review
+    from planreview_openrouter_mcp.client import get_review
 
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(
@@ -251,7 +251,7 @@ async def test_get_review_retries_on_timeout_error():
     )
 
     with (
-        patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client),
+        patch("planreview_openrouter_mcp.client._get_client", return_value=mock_client),
         patch("asyncio.sleep", new_callable=AsyncMock),
     ):
         result = await get_review("code", "system", "google/gemini-3.1-pro-preview")
@@ -263,7 +263,7 @@ async def test_get_review_retries_on_timeout_error():
 @pytest.mark.asyncio
 async def test_get_review_exhausts_retries():
     """Should return error after max retries exhausted."""
-    from codereview_openrouter_mcp.client import get_review
+    from planreview_openrouter_mcp.client import get_review
 
     mock_client = AsyncMock()
     mock_client.chat.completions.create = AsyncMock(
@@ -271,7 +271,7 @@ async def test_get_review_exhausts_retries():
     )
 
     with (
-        patch("codereview_openrouter_mcp.client._get_client", return_value=mock_client),
+        patch("planreview_openrouter_mcp.client._get_client", return_value=mock_client),
         patch("asyncio.sleep", new_callable=AsyncMock),
     ):
         result = await get_review("code", "system", "google/gemini-3.1-pro-preview")

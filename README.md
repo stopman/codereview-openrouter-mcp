@@ -1,4 +1,4 @@
-# codereview-openrouter-mcp
+# planreview-openrouter-mcp
 
 An MCP server that gives your AI coding assistant a **staff/principal-engineer-level review panel for plans and designs** — all through a single OpenRouter API key.
 
@@ -30,9 +30,9 @@ Sign up at [openrouter.ai](https://openrouter.ai) and grab your API key.
 ```json
 {
   "mcpServers": {
-    "codereview": {
+    "planreview": {
       "command": "uv",
-      "args": ["run", "codereview-openrouter-mcp"],
+      "args": ["run", "planreview-openrouter-mcp"],
       "env": {
         "OPENROUTER_API_KEY": "your-key-here"
       }
@@ -44,7 +44,7 @@ Sign up at [openrouter.ai](https://openrouter.ai) and grab your API key.
 Or add it via the CLI:
 
 ```bash
-claude mcp add codereview -- uv run codereview-openrouter-mcp
+claude mcp add planreview -- uv run planreview-openrouter-mcp
 ```
 
 **Amp** — add the same `.mcp.json` configuration to your project root. Amp discovers `review_oracle` as its oracle tool automatically.
@@ -116,7 +116,7 @@ The system prompts for all five personas live in [`PERSONAS.md`](PERSONAS.md) at
 
 - **Edits apply live**: the server re-reads the file whenever it changes — no restart needed. The next review uses your updated prompts.
 - **Safe to experiment**: if a save is malformed (missing/duplicate/unknown section), the running server keeps the last good version and logs a warning. A broken file at startup fails loudly with the exact problem named.
-- Which model gets which persona is mapped in `codereview_openrouter_mcp/prompts.py` (`PERSONA_MAP`).
+- Which model gets which persona is mapped in `planreview_openrouter_mcp/prompts.py` (`PERSONA_MAP`).
 
 ## Review output
 
@@ -160,8 +160,8 @@ This catches AWS keys, GitHub tokens, passwords, private keys, connection string
 ## Development
 
 ```bash
-git clone https://github.com/stopman/codereview-openrouter-mcp.git
-cd codereview-openrouter-mcp
+git clone https://github.com/stopman/planreview-openrouter-mcp.git
+cd planreview-openrouter-mcp
 uv run pytest tests/ -v
 ```
 

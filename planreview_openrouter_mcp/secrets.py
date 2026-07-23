@@ -4,7 +4,7 @@ import tempfile
 from detect_secrets import SecretsCollection
 from detect_secrets.settings import default_settings
 
-from codereview_openrouter_mcp.logging import get_logger
+from planreview_openrouter_mcp.logging import get_logger
 
 log = get_logger("secrets")
 

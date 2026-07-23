@@ -1,8 +1,8 @@
 {
   "mcpServers": {
-    "codereview": {
+    "planreview": {
       "command": "uv",
-      "args": ["run", "codereview-openrouter-mcp"],
+      "args": ["run", "planreview-openrouter-mcp"],
       "env": {
         "OPENROUTER_API_KEY": "${OPENROUTER_API_KEY}"
       }

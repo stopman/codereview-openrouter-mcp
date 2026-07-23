@@ -4,11 +4,11 @@ from typing import Callable
 
 from mcp.server.fastmcp import Context, FastMCP
 
-from codereview_openrouter_mcp.client import get_review
-from codereview_openrouter_mcp.config import settings
-from codereview_openrouter_mcp.context_files import ContextFilesError, read_context_files
-from codereview_openrouter_mcp.logging import get_logger, setup_logging
-from codereview_openrouter_mcp.models import (
+from planreview_openrouter_mcp.client import get_review
+from planreview_openrouter_mcp.config import settings
+from planreview_openrouter_mcp.context_files import ContextFilesError, read_context_files
+from planreview_openrouter_mcp.logging import get_logger, setup_logging
+from planreview_openrouter_mcp.models import (
     ALL_REVIEW_MODELS,
     FALLBACK_DISPLAY_NAMES,
     FALLBACK_MODELS,
@@ -17,12 +17,12 @@ from codereview_openrouter_mcp.models import (
     get_reasoning_config,
     resolve_model,
 )
-from codereview_openrouter_mcp.prompts import (
+from planreview_openrouter_mcp.prompts import (
     format_plan_review_request,
     get_persona,
     get_plan_review_system_prompt,
 )
-from codereview_openrouter_mcp.secrets import redact_secrets
+from planreview_openrouter_mcp.secrets import redact_secrets
 
 log = get_logger("server")
 

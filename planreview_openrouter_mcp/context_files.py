@@ -1,7 +1,7 @@
 import asyncio
 from pathlib import Path
 
-from codereview_openrouter_mcp.logging import get_logger
+from planreview_openrouter_mcp.logging import get_logger
 
 log = get_logger("context_files")
 
@@ -12,7 +12,7 @@ class ContextFilesError(Exception):
 
 def _check_repo_path_allowed(repo_path: str) -> None:
     """Check repo_path is under an allowed root (if configured)."""
-    from codereview_openrouter_mcp.config import settings
+    from planreview_openrouter_mcp.config import settings
 
     if not settings.allowed_repo_roots:
         return

@@ -13,32 +13,32 @@ def _resolve_log_dir() -> Path:
     if env_dir:
         return Path(env_dir).resolve()
     try:
-        return Path.home() / ".cache" / "codereview-mcp" / "logs"
+        return Path.home() / ".cache" / "planreview-mcp" / "logs"
     except RuntimeError:
         user = getpass.getuser()
-        return Path(tempfile.gettempdir()) / f"codereview-mcp-{user}" / "logs"
+        return Path(tempfile.gettempdir()) / f"planreview-mcp-{user}" / "logs"
 
 
 def get_logger(name: str) -> logging.Logger:
-    """Return a logger under the 'codereview' namespace that writes to stderr.
+    """Return a logger under the 'planreview' namespace that writes to stderr.
 
     MCP uses stdout for protocol communication, so all diagnostic output
     must go to stderr.
     """
-    logger = logging.getLogger(f"codereview.{name}")
+    logger = logging.getLogger(f"planreview.{name}")
     return logger
 
 
 def setup_logging(level: str = "INFO", log_dir: Path | None = None) -> None:
-    """Configure the root 'codereview' logger once at startup.
+    """Configure the root 'planreview' logger once at startup.
 
     Log directory is resolved at call time (not import time) from:
     1. The explicit ``log_dir`` parameter
     2. The ``MCP_LOG_DIR`` environment variable
-    3. ``~/.cache/codereview-mcp/logs``
+    3. ``~/.cache/planreview-mcp/logs``
     4. A per-user temp directory as a last resort
     """
-    root = logging.getLogger("codereview")
+    root = logging.getLogger("planreview")
     if root.handlers:
         return  # already configured
 

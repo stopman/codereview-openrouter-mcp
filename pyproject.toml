@@ -1,5 +1,5 @@
 [project]
-name = "codereview-openrouter-mcp"
+name = "planreview-openrouter-mcp"
 version = "0.1.0"
 description = "MCP server for AI-powered code review — route to Gemini, GPT, or Claude via OpenRouter"
 license = "MIT"
@@ -12,7 +12,7 @@ dependencies = [
 ]
 
 [project.scripts]
-codereview-openrouter-mcp = "codereview_openrouter_mcp.server:main"
+planreview-openrouter-mcp = "planreview_openrouter_mcp.server:main"
 
 [project.optional-dependencies]
 dev = [

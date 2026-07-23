@@ -2,7 +2,7 @@ import os
 
 from dotenv import load_dotenv
 
-from codereview_openrouter_mcp.logging import get_logger
+from planreview_openrouter_mcp.logging import get_logger
 
 load_dotenv(override=True)
 

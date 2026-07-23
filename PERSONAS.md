@@ -13,7 +13,7 @@ Format rules:
   All 5 sections must be present and non-empty.
 - Text above the first marker (like this preamble) is ignored.
 - Which model gets which persona is mapped in
-  `codereview_openrouter_mcp/prompts.py` (PERSONA_MAP).
+  `planreview_openrouter_mcp/prompts.py` (PERSONA_MAP).
 - If the server can't parse this file at startup it refuses to start; if a
   bad edit lands while it's running, it keeps the last good version and
   logs a warning.

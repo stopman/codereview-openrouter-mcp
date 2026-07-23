@@ -1,7 +1,7 @@
 import re
 from pathlib import Path
 
-from codereview_openrouter_mcp.logging import get_logger
+from planreview_openrouter_mcp.logging import get_logger
 
 log = get_logger("prompts")
 

@@ -2,7 +2,7 @@ from unittest.mock import patch
 
 import pytest
 
-from codereview_openrouter_mcp.context_files import (
+from planreview_openrouter_mcp.context_files import (
     MAX_SINGLE_CONTEXT_FILE_CHARS,
     ContextFilesError,
     read_context_files,
@@ -129,7 +129,7 @@ async def test_read_context_files_budget_truncates_safely(tmp_path):
 @pytest.mark.asyncio
 async def test_repo_path_allowed_when_configured(tmp_path):
     (tmp_path / "doc.md").write_text("content")
-    with patch("codereview_openrouter_mcp.config.settings") as mock_settings:
+    with patch("planreview_openrouter_mcp.config.settings") as mock_settings:
         mock_settings.allowed_repo_roots = [str(tmp_path.parent)]
         text, skipped = await read_context_files(str(tmp_path), ["doc.md"])
     assert "content" in text
@@ -139,7 +139,7 @@ async def test_repo_path_allowed_when_configured(tmp_path):
 @pytest.mark.asyncio
 async def test_repo_path_rejected_when_outside_roots(tmp_path):
     (tmp_path / "doc.md").write_text("content")
-    with patch("codereview_openrouter_mcp.config.settings") as mock_settings:
+    with patch("planreview_openrouter_mcp.config.settings") as mock_settings:
         mock_settings.allowed_repo_roots = ["/some/other/root"]
         with pytest.raises(ContextFilesError, match="not in allowed roots"):
             await read_context_files(str(tmp_path), ["doc.md"])
@@ -148,7 +148,7 @@ async def test_repo_path_rejected_when_outside_roots(tmp_path):
 @pytest.mark.asyncio
 async def test_repo_path_no_restriction_when_unconfigured(tmp_path):
     (tmp_path / "doc.md").write_text("content")
-    with patch("codereview_openrouter_mcp.config.settings") as mock_settings:
+    with patch("planreview_openrouter_mcp.config.settings") as mock_settings:
         mock_settings.allowed_repo_roots = []
         text, _ = await read_context_files(str(tmp_path), ["doc.md"])
     assert "content" in text
@@ -163,7 +163,7 @@ async def test_repo_path_rejects_symlink_escape(tmp_path):
     link_path = tmp_path / "sneaky_link"
     link_path.symlink_to(real_repo)
 
-    with patch("codereview_openrouter_mcp.config.settings") as mock_settings:
+    with patch("planreview_openrouter_mcp.config.settings") as mock_settings:
         # The link resolves to real_repo, which is NOT under the allowed root.
         mock_settings.allowed_repo_roots = ["/some/allowed/root"]
         with pytest.raises(ContextFilesError, match="not in allowed roots"):

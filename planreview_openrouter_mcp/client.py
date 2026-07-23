@@ -4,8 +4,8 @@ import random
 import openai
 from openai import AsyncOpenAI
 
-from codereview_openrouter_mcp.config import settings
-from codereview_openrouter_mcp.logging import get_logger
+from planreview_openrouter_mcp.config import settings
+from planreview_openrouter_mcp.logging import get_logger
 
 log = get_logger("client")
 
@@ -88,8 +88,8 @@ async def get_review(
                 ],
                 "temperature": 0.2,
                 "extra_headers": {
-                    "HTTP-Referer": "https://github.com/codereview-mcp",
-                    "X-OpenRouter-Title": "CodeReview MCP",
+                    "HTTP-Referer": "https://github.com/stopman/planreview-openrouter-mcp",
+                    "X-OpenRouter-Title": "PlanReview MCP",
                 },
             }
             if max_tokens is not None:
